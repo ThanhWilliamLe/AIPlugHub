@@ -1,0 +1,40 @@
+appId: com.twle.aiplughub
+productName: AI Plug Hub
+directories:
+  buildResources: build
+  output: dist
+asar: true
+files:
+  - '!**/.vscode/*'
+  - '!src/**/*'
+  - '!e2e/**/*'
+  - '!electron.vite.config.*'
+  - '!{.eslintrc,.prettierrc,vitest.config,playwright.config}*'
+  - '!{tsconfig,tsconfig.*}.json'
+win:
+  target:
+    - nsis
+    - portable
+  signAndEditExecutable: false
+portable:
+  artifactName: AIPlugHub-${version}-portable.exe
+nsis:
+  oneClick: false
+  createDesktopShortcut: true
+  perMachine: false
+  artifactName: AIPlugHub-${version}-installer.exe
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+  artifactName: AIPlugHub-${version}.dmg
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  artifactName: AIPlugHub-${version}.${ext}
+fileAssociations:
+  - ext: aibundle
+    name: AI Bundle
+    description: AI Plug Hub Bundle file
+    mimeType: application/x-aibundle
