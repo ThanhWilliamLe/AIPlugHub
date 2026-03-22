@@ -38,15 +38,15 @@ Your AI tools each have their own plugins, their own config files, and their own
 
 Grab the latest release:
 
-- **[Windows installer (.exe)](https://github.com/ThanhWilliamLe/aiplughub/releases/latest)** -- double-click to install
-- **[Windows portable (.exe)](https://github.com/ThanhWilliamLe/aiplughub/releases/latest)** -- no install needed, run directly
+- **[Windows installer (.exe)](https://github.com/ThanhWilliamLe/AIPlugHub/releases/latest)** -- double-click to install
+- **[Windows portable (.exe)](https://github.com/ThanhWilliamLe/AIPlugHub/releases/latest)** -- no install needed, run directly
 - macOS -- coming soon
 - Linux -- coming soon
 
 ### Build from source
 
 ```bash
-git clone https://github.com/ThanhWilliamLe/aiplughub.git
+git clone https://github.com/ThanhWilliamLe/AIPlugHub.git
 cd aiplughub
 npm install
 npm run dev
@@ -86,7 +86,7 @@ This is real software you can download and run today -- not a prototype, not a w
 
 The most helpful thing you can do right now is try it and report what happens.
 
-**[Open an issue](https://github.com/ThanhWilliamLe/aiplughub/issues)**
+**[Open an issue](https://github.com/ThanhWilliamLe/AIPlugHub/issues)**
 
 What's most useful:
 
