@@ -1,25 +1,49 @@
+![Build](https://img.shields.io/badge/build-passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1%2C778-blue)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-public%20preview-orange)
+
 # AI Plug Hub
 
-Manage plugins, skills, and extensions across all your AI tools — in one place.
+**One app to manage plugins across all your AI tools.**
 
-AI Plug Hub is a desktop app that gives you a unified view of everything installed across Claude Code, Claude Desktop, Gemini CLI, and Antigravity. Browse marketplaces, install with one click, export your setup as a shareable bundle, and import a teammate's config in seconds.
+Your AI tools each have their own plugins, their own config files, and their own install steps. AI Plug Hub puts everything in one place -- browse, install, and share plugins across Claude Code, Claude Desktop, Gemini CLI, and Antigravity without memorizing each tool's config format. Export a bundle and onboard your whole team at once.
 
-No terminal required. No JSON editing. Just a clean GUI.
+![My Setup tab showing installed plugins across Claude Code, Gemini CLI, and Antigravity](docs/screenshots/my-setup-tab.png)
 
 ## What it does
 
-| | |
-|---|---|
-| **Detect** | Auto-finds Claude Code and Claude Desktop on your machine |
-| **View** | See all installed components (MCP servers, skills, commands, hooks) grouped by tool |
-| **Browse** | Search and filter marketplace plugins, read details, install directly |
-| **Install / Uninstall** | From marketplace, URL, or local file — one click into the right tool |
-| **Enable / Disable** | Toggle components on/off without removing them |
-| **Export** | Select components, strip secrets automatically, save as `.aibundle` |
-| **Import** | Open a bundle, resolve conflicts inline, get prompted for missing secrets |
-| **Drag & Drop** | Drop an `.aibundle` file onto the app from any tab to start importing |
+- **See all your plugins in one view** -- user-level and project-level, across every tool
+- **Browse and install** from marketplace sources, sorted by popularity with star counts
+- **Check for updates** -- detect available updates and review changes before applying
+- **Enable, disable, or uninstall** any plugin from any supported tool
+- **Export your setup** as a bundle file and onboard your whole team to the same config
+- **Import a bundle** on a new machine and get the exact same setup quickly
+- **Bulk operations** -- select multiple plugins and act on them at once
+- **Backup and restore** -- snapshot your config before experimenting
+
+## Supported tools
+
+| Tool | What it is | Plugin types |
+|------|-----------|--------------|
+| **Claude Code** | Anthropic's CLI coding assistant | MCP servers, skills, commands, hooks, agents, context files |
+| **Claude Desktop** | Anthropic's desktop chat app | MCP servers |
+| **Gemini CLI** | Google's CLI coding assistant | MCP servers, skills, commands, hooks, agents, context files |
+| **Antigravity** | AI-powered IDE with skills, workflows, and extensions | MCP servers, skills, commands, context files |
 
 ## Quick start
+
+### Download
+
+Grab the latest release:
+
+- **[Windows installer (.exe)](https://github.com/ThanhWilliamLe/aiplughub/releases/latest)** -- double-click to install
+- **[Windows portable (.exe)](https://github.com/ThanhWilliamLe/aiplughub/releases/latest)** -- no install needed, run directly
+- macOS -- coming soon
+- Linux -- coming soon
+
+### Build from source
 
 ```bash
 git clone https://github.com/ThanhWilliamLe/aiplughub.git
@@ -28,128 +52,69 @@ npm install
 npm run dev
 ```
 
-On first launch, AI Plug Hub scans your machine for supported AI tools and shows what's installed.
+Build from source is optional -- the download above is all you need. Building requires Node.js 18+ and npm.
 
-## Build & distribute
+## How it works
 
-```bash
-# Windows installer (.exe, ~97MB)
-npm run dist
+1. **Detect** -- On first launch, the app scans your machine for installed AI tools and finds their plugins automatically.
+2. **View** -- See everything you have installed, grouped by tool. Check details, status, and configuration at a glance.
+3. **Browse** -- Search plugin sources (GitHub-based marketplaces, URL indexes) to find new plugins.
+4. **Install** -- Pick a plugin, pick which tool to install it for, and the app writes the correct config in the correct format.
+5. **Export / Import** -- Package your setup into a bundle file. Send it to a teammate, move it to another machine, or keep it as a backup.
 
-# Output → dist/AI Plug Hub Setup 0.1.0.exe
-# Send this file to anyone — they double-click to install.
+![Browse tab with marketplace sources, popularity sort, and star counts](docs/screenshots/browse-tab.png)
 
-# Portable (no installer) → zip dist/win-unpacked/ and share
+## Bundle sharing
 
-# Other platforms
-npm run dist:mac     # → dist/AI Plug Hub-0.1.0.dmg
-npm run dist:linux   # → dist/AI Plug Hub-0.1.0.AppImage
-npm run dist:all     # → all platforms at once
+Bundles are how you move plugin setups between machines and people.
+
+**Exporting:** Select the plugins you want to include, and AI Plug Hub creates a single bundle file. The bundle knows which tools each plugin belongs to, so nothing gets lost in translation.
+
+![Transfer tab with Export and Import options](docs/screenshots/transfer-tab.png)
+
+**Importing:** Open a bundle file and AI Plug Hub shows you what's inside. If anything conflicts with your existing setup, the app walks you through it -- you decide what to keep, what to replace, and what to skip.
+
+Bundles handle secrets carefully. API keys and tokens are detected and stripped automatically during export. Sensitive values stay out of bundles by default.
+
+## Public preview
+
+AI Plug Hub is in **public preview**. Core features are implemented and backed by 1,778 tests (including endurance suites), but it hasn't had wide real-world usage yet. Windows is available now; macOS and Linux are coming soon.
+
+This is real software you can download and run today -- not a prototype, not a waitlist. Your feedback will shape what comes next.
+
+## Feedback
+
+The most helpful thing you can do right now is try it and report what happens.
+
+**[Open an issue](https://github.com/ThanhWilliamLe/aiplughub/issues)**
+
+What's most useful:
+
+- Bug reports with steps to reproduce
+- Which AI tools you use and how the detection worked (or didn't)
+- Plugins that failed to install or didn't show up
+- Anything confusing in the UI
+- What you wish it did differently
+
+<details>
+<summary><strong>Development</strong></summary>
+
 ```
-
-## Development
-
-```bash
 npm install          # Install dependencies
-npm run dev          # Launch with hot reload
-npm run build        # Production build (without packaging)
-```
-
-## Scripts
-
-```
 npm run dev          # Launch with hot reload
 npm run build        # Production build
 npm run dist         # Build + package Windows installer
 npm run dist:mac     # Build + package macOS .dmg
 npm run dist:linux   # Build + package Linux AppImage
-npm run dist:all     # Build + package all platforms
 npm test             # Run tests (1778 passing)
 npm run lint         # ESLint
-npm run format       # Prettier
 npm run typecheck    # TypeScript strict check
-npm run test:e2e     # Playwright E2E tests (28 tests)
 ```
 
-## Tech stack
+**Tech stack:** Electron 41, React 19, TypeScript 5.9, Tailwind v4, Radix UI, Zustand, Vitest + Playwright
 
-- **Electron 41** — cross-platform desktop shell
-- **React 19 + TypeScript 5.9** — renderer
-- **Tailwind v4 + Radix UI** — styling and accessible primitives
-- **Zustand** — state management
-- **Fuse.js** — client-side fuzzy search
-- **Vitest + React Testing Library** — 1778 unit/integration tests, 97% coverage
-- **Playwright** — 28 E2E tests (smoke + critical flows + accessibility)
-
-## How it works
-
-AI Plug Hub has three tabs:
-
-**My Setup** — Your installed components, grouped by tool. Expand a tool section to see its MCP servers, skills, commands, and hooks. Click any component for a detail panel with metadata, toggle, uninstall, and "show in explorer."
-
-**Browse** — A storefront connected to marketplace sources (GitHub-based or custom URL indexes). Search, filter by tool/type, sort by name or date. Click a result to see its full description and install it.
-
-**Transfer** — Export your setup as a portable `.aibundle` file. Secrets (API keys, tokens) are automatically stripped and recipients get prompted to provide their own. Import a bundle to see what's new, what conflicts, and what's incompatible — resolve inline with dropdowns, then install.
-
-## Bundle format
-
-Bundles are JSON files with the `.aibundle` extension:
-
-```json
-{
-  "formatVersion": "1.0",
-  "name": "my-team-setup",
-  "exportedFrom": { "tools": ["claude-code"], "date": "2026-03-20T..." },
-  "components": [
-    {
-      "type": "mcp-server",
-      "name": "sqlite-mcp",
-      "core": { "transport": "stdio", "command": "sqlite-mcp" },
-      "requiredConfig": [
-        { "key": "API_KEY", "sensitive": true, "envVar": "API_KEY" }
-      ]
-    }
-  ]
-}
-```
-
-Secrets are never included. The `requiredConfig` array tells the recipient what they need to provide.
-
-## Supported tools
-
-| Tool | Status | Component types |
-|------|--------|----------------|
-| Claude Code | Supported | MCP servers, skills, commands, hooks, agents, context files |
-| Claude Desktop | Supported | MCP servers |
-| Gemini CLI | Supported | MCP servers, skills, commands, hooks, agents, context files |
-| Antigravity | Supported | MCP servers, skills, commands, context files |
-
-## Architecture
-
-```
-main process          preload           renderer
-─────────────         ────────          ─────────
-AdapterRegistry  ──►  contextBridge ──► Zustand stores
-  ClaudeCodeAdapter    (typed API)       toolStore
-  ClaudeDesktopAdapter                   browseStore
-ConfigIO                                 wizardStore
-DataStore                                uiStore
-SecretStore                            React components
-BundleEngine                             My Setup / Browse / Transfer
-MarketplaceClient
-Logger
-```
-
-All IPC uses typed channels with `IpcResult<T>` — success returns data, errors return structured `{ code, message, recoverable }`. The preload unwraps this so the renderer gets clean `Promise<T>` or thrown errors.
-
-## Design
-
-Warm Sand palette — cream backgrounds, earth-tone accents. Component types get distinct colors: teal (MCP), violet (skill), blue (command), orange (hook). Red is reserved for destructive actions only.
-
-## Status
-
-v1.4 — all milestones complete. Native plugin system integration, marketplace auto-discovery, bulk operations, backup/restore. 1,778 tests passing. TypeScript strict clean.
+</details>
 
 ## License
 
-MIT
+MIT -- see [LICENSE](LICENSE) for details.
