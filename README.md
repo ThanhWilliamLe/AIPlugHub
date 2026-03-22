@@ -22,8 +22,8 @@ No terminal required. No JSON editing. Just a clean GUI.
 ## Quick start
 
 ```bash
-git clone <repo-url>
-cd 7A-app
+git clone https://github.com/ThanhWilliamLe/aiplughub.git
+cd aiplughub
 npm install
 npm run dev
 ```
@@ -64,7 +64,7 @@ npm run dist         # Build + package Windows installer
 npm run dist:mac     # Build + package macOS .dmg
 npm run dist:linux   # Build + package Linux AppImage
 npm run dist:all     # Build + package all platforms
-npm test             # Run tests (1355 passing)
+npm test             # Run tests (1778 passing)
 npm run lint         # ESLint
 npm run format       # Prettier
 npm run typecheck    # TypeScript strict check
@@ -78,7 +78,7 @@ npm run test:e2e     # Playwright E2E tests (28 tests)
 - **Tailwind v4 + Radix UI** — styling and accessible primitives
 - **Zustand** — state management
 - **Fuse.js** — client-side fuzzy search
-- **Vitest + React Testing Library** — 1355 unit/integration tests, 97% coverage
+- **Vitest + React Testing Library** — 1778 unit/integration tests, 97% coverage
 - **Playwright** — 28 E2E tests (smoke + critical flows + accessibility)
 
 ## How it works
@@ -119,10 +119,10 @@ Secrets are never included. The `requiredConfig` array tells the recipient what 
 
 | Tool | Status | Component types |
 |------|--------|----------------|
-| Claude Code | Supported | MCP servers, skills, commands, hooks, agents |
+| Claude Code | Supported | MCP servers, skills, commands, hooks, agents, context files |
 | Claude Desktop | Supported | MCP servers |
-| Gemini CLI | Planned | MCP servers, extensions |
-| Antigravity | Planned | MCP servers, skills, workflows, rules |
+| Gemini CLI | Supported | MCP servers, skills, commands, hooks, agents, context files |
+| Antigravity | Supported | MCP servers, skills, commands, context files |
 
 ## Architecture
 
@@ -148,8 +148,8 @@ Warm Sand palette — cream backgrounds, earth-tone accents. Component types get
 
 ## Status
 
-M0–M8 complete. Plugin system integration shipped. 97% test coverage. User validation passed (20/20 scenarios).
+v1.4 — all milestones complete. Native plugin system integration, marketplace auto-discovery, bulk operations, backup/restore. 1,778 tests passing. TypeScript strict clean.
 
 ## License
 
-TBD
+MIT
