@@ -524,7 +524,11 @@ export function createGeminiCliAdapter(
             scanExtensionContext(entry, manifest, enabled),
           ]);
 
-          components.push(...mcpServers, ...skills, ...commands, ...hooks, ...agents, ...context);
+          // Strip `enabled` — canToggle() is false for Gemini CLI, so exposing
+          // it would show a non-functional toggle and dim disabled rows.
+          const all = [...mcpServers, ...skills, ...commands, ...hooks, ...agents, ...context];
+          for (const c of all) delete (c as Record<string, unknown>).enabled;
+          components.push(...all);
         } catch (err) {
           logger.warn(MODULE, `Failed to scan extension: ${entry}`, err);
         }

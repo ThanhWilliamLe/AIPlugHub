@@ -88,7 +88,7 @@ function PluginGroupSection({
   );
 
   return (
-    <div className={cn('ml-4 mb-1', !group.enabled && 'opacity-50')}>
+    <div className="ml-4 mb-1">
       {/* Plugin group header */}
       <div
         className={cn(
@@ -151,32 +151,7 @@ function PluginGroupSection({
         {/* Update badge */}
         <UpdateBadge pluginKey={group.pluginKey} />
 
-        {/* Plugin toggle */}
-        {onTogglePlugin && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={group.enabled}
-            aria-label={`${group.enabled ? 'Disable' : 'Enable'} plugin ${group.pluginKey}`}
-            className={cn(
-              'relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-olive/40',
-              group.enabled ? 'bg-accent-olive' : 'bg-sand-muted/40',
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              onTogglePlugin(group.pluginKey);
-            }}
-          >
-            <span
-              className={cn(
-                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-                'translate-y-0.5',
-                group.enabled ? 'translate-x-[18px]' : 'translate-x-0.5',
-              )}
-            />
-          </button>
-        )}
+        {/* Plugin toggle — hidden until adapters support canToggle() */}
       </div>
 
       {/* Plugin components (when expanded) */}

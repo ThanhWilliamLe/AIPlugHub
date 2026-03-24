@@ -314,7 +314,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(extMcp).toBeDefined();
     expect(extMcp!.id.type).toBe('mcp-server');
     expect(extMcp!.id.scope).toBe('extension:my-ext');
-    expect(extMcp!.enabled).toBe(true);
+    expect(extMcp!.enabled).toBeUndefined();
     expect(extMcp!.version).toBe('1.2.0');
 
     const core = extMcp!.core as { transport: string; command: string; args?: string[] };
@@ -330,7 +330,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(skill).toBeDefined();
     expect(skill!.id.type).toBe('skill');
     expect(skill!.id.scope).toBe('extension:my-ext');
-    expect(skill!.enabled).toBe(true);
+    expect(skill!.enabled).toBeUndefined();
     expect(skill!.version).toBe('1.2.0');
     expect(skill!.description).toBe('A test skill');
     expect(skill!.displayName).toBe('My Skill');
@@ -347,7 +347,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(cmd).toBeDefined();
     expect(cmd!.id.type).toBe('command');
     expect(cmd!.id.scope).toBe('extension:my-ext');
-    expect(cmd!.enabled).toBe(true);
+    expect(cmd!.enabled).toBeUndefined();
     expect(cmd!.description).toBe('Greet the user');
 
     const core = cmd!.core as { description?: string; content: string };
@@ -387,7 +387,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(agent).toBeDefined();
     expect(agent!.id.type).toBe('agent');
     expect(agent!.id.scope).toBe('extension:my-ext');
-    expect(agent!.enabled).toBe(true);
+    expect(agent!.enabled).toBeUndefined();
     expect(agent!.description).toBe('Code review agent');
 
     const core = agent!.core as {
@@ -409,7 +409,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(ctx).toBeDefined();
     expect(ctx!.id.type).toBe('context-file');
     expect(ctx!.id.scope).toBe('extension:my-ext');
-    expect(ctx!.enabled).toBe(true);
+    expect(ctx!.enabled).toBeUndefined();
     expect(ctx!.description).toBe('Context file for my-ext');
   });
 
@@ -434,24 +434,25 @@ describe('GeminiCliAdapter.scan -- enablement state', () => {
     const components = await adapter.scan();
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
+    // enabled is stripped because canToggle() is false
     expect(extComponents.length).toBeGreaterThan(0);
     for (const c of extComponents) {
-      expect(c.enabled).toBe(false);
+      expect(c.enabled).toBeUndefined();
     }
   });
 
-  it('defaults to enabled when extension not in enablement file', async () => {
+  it('strips enabled regardless of enablement state (canToggle is false)', async () => {
     await writeFile(join(tempDir, 'extensions', 'extension-enablement.json'), JSON.stringify({}));
 
     const components = await adapter.scan();
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
     for (const c of extComponents) {
-      expect(c.enabled).toBe(true);
+      expect(c.enabled).toBeUndefined();
     }
   });
 
-  it('defaults to enabled when enablement file is missing', async () => {
+  it('strips enabled when enablement file is missing', async () => {
     await rm(join(tempDir, 'extensions', 'extension-enablement.json'), { force: true });
 
     const components = await adapter.scan();
@@ -459,11 +460,11 @@ describe('GeminiCliAdapter.scan -- enablement state', () => {
 
     expect(extComponents.length).toBeGreaterThan(0);
     for (const c of extComponents) {
-      expect(c.enabled).toBe(true);
+      expect(c.enabled).toBeUndefined();
     }
   });
 
-  it('handles corrupted enablement file gracefully (defaults to enabled)', async () => {
+  it('handles corrupted enablement file gracefully', async () => {
     await writeFile(join(tempDir, 'extensions', 'extension-enablement.json'), '{corrupted json!!!');
 
     const components = await adapter.scan();
@@ -471,7 +472,7 @@ describe('GeminiCliAdapter.scan -- enablement state', () => {
 
     expect(extComponents.length).toBeGreaterThan(0);
     for (const c of extComponents) {
-      expect(c.enabled).toBe(true);
+      expect(c.enabled).toBeUndefined();
     }
   });
 });

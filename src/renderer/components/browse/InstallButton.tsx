@@ -65,7 +65,9 @@ export function InstallButton({
   const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
   const [savedTarget, setSavedTarget] = useState<BrowseInstallTarget | null>(null);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   const isInstalling = refsEqual(installingRef, ref_);
   const justInstalled = refsEqual(lastInstalledRef, ref_);
@@ -129,7 +131,10 @@ export function InstallButton({
   useEffect(() => {
     if (!showDropdown) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inTrigger = triggerRef.current?.contains(target);
+      const inDropdown = dropdownRef.current?.contains(target);
+      if (!inTrigger && !inDropdown) {
         setShowDropdown(false);
       }
     };
@@ -226,7 +231,7 @@ export function InstallButton({
   const currentLabel = effectiveTarget ? targetLabel(effectiveTarget, tools) : 'Select location';
 
   return (
-    <div className="relative inline-flex items-stretch" ref={dropdownRef}>
+    <div className="relative inline-flex items-stretch" ref={triggerRef}>
       {/* Install button with sub-text */}
       <Button
         size="sm"
@@ -252,7 +257,13 @@ export function InstallButton({
           'bg-accent-olive text-white hover:bg-accent-olive/80 transition-colors',
           'flex items-center justify-center',
         )}
-        onClick={() => setShowDropdown(!showDropdown)}
+        onClick={() => {
+          if (!showDropdown && triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setDropdownPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+          }
+          setShowDropdown(!showDropdown);
+        }}
         aria-label="Change install location"
         aria-expanded={showDropdown}
         title="Change install location"
@@ -261,13 +272,15 @@ export function InstallButton({
       </button>
 
       {/* Location dropdown */}
-      {showDropdown && (
+      {showDropdown && dropdownPos && (
         <div
+          ref={dropdownRef}
           className={cn(
-            'absolute right-0 top-full mt-1 z-50 min-w-[220px]',
+            'fixed z-50 min-w-[220px]',
             'bg-sand-paper border border-sand-border rounded-lg shadow-lg py-1',
             'animate-bounce-in',
           )}
+          style={{ top: dropdownPos.top, right: dropdownPos.right }}
           role="menu"
         >
           <div className="px-3 py-1 text-[10px] text-sand-muted uppercase tracking-wider">
