@@ -68,14 +68,14 @@ export function BulkUninstallDialog({
         aria-labelledby="bulk-uninstall-title"
         aria-describedby="bulk-uninstall-description"
       >
-        <div className="bg-sand-paper rounded-xl shadow-xl border border-sand-border p-6 max-w-md w-full animate-bounce-in">
+        <div className="bg-sand-paper rounded-xl shadow-xl border border-sand-border p-6 max-w-md w-full max-h-[80vh] flex flex-col animate-bounce-in">
           <h2 id="bulk-uninstall-title" className="text-lg font-semibold text-sand-text mb-3">
             Uninstall {count} plugin{count !== 1 ? 's' : ''}?
           </h2>
 
           <p className="text-sm text-sand-secondary mb-3">This will remove:</p>
 
-          <div id="bulk-uninstall-description" className="mb-4 space-y-3">
+          <div id="bulk-uninstall-description" className="mb-4 space-y-3 overflow-y-auto flex-1 min-h-0">
             {Array.from(groups.entries()).map(([tool, group]) => (
               <div key={tool}>
                 <p className="text-sm font-medium text-sand-text">
