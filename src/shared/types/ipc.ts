@@ -85,4 +85,6 @@ export type UserPreferences = {
   projectFolders?: ProjectFolder[];
   /** Last-selected install target in Browse tab (reuses BrowseInstallTarget shape) */
   browseInstallTarget?: import('./marketplace').BrowseInstallTarget;
+  /** Whether the user has dismissed the Getting Started section (UX-09) */
+  gettingStartedDismissed?: boolean;
 };

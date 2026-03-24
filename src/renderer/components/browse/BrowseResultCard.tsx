@@ -14,12 +14,14 @@ import type { ComponentType } from '@shared/types';
 type BrowseResultCardProps = {
   entry: MarketplaceEntry;
   selected: boolean;
+  isInstalled: boolean;
   onSelect: (ref: MarketplaceRef) => void;
 };
 
 export const BrowseResultCard = React.memo(function BrowseResultCard({
   entry,
   selected,
+  isInstalled,
   onSelect,
 }: BrowseResultCardProps) {
   const ref: MarketplaceRef = { sourceId: entry.sourceId, ref: entry.ref };
@@ -50,11 +52,18 @@ export const BrowseResultCard = React.memo(function BrowseResultCard({
       }}
       aria-current={selected ? 'true' : undefined}
     >
-      {/* Header: name + version */}
+      {/* Header: name + installed badge + version */}
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-sm font-medium text-sand-text truncate">
-          {entry.displayName ?? entry.name}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-sm font-medium text-sand-text truncate">
+            {entry.displayName ?? entry.name}
+          </span>
+          {isInstalled && (
+            <span className="shrink-0 text-[10px] font-medium text-accent-olive bg-accent-olive/10 px-1.5 py-0.5 rounded">
+              Installed
+            </span>
+          )}
+        </div>
         {entry.version && (
           <span className="text-xs text-sand-muted shrink-0">v{entry.version}</span>
         )}
@@ -83,9 +92,7 @@ export const BrowseResultCard = React.memo(function BrowseResultCard({
         ))}
 
         {/* Source tag */}
-        <span className="text-xs text-sand-muted font-mono">
-          @{entry.sourceId}
-        </span>
+        <span className="text-xs text-sand-muted font-mono">@{entry.sourceId}</span>
 
         {/* Star badge (USR-09) */}
         {entry.starCount !== undefined && (

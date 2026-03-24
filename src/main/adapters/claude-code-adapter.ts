@@ -28,6 +28,8 @@ import type {
   CommandCore,
   HookCore,
   AgentCore,
+  LspServerCore,
+  GitMarketplaceManifest,
 } from '@shared/types';
 import { AppError } from '@shared/types';
 import { TOOL_COMPONENTS, CACHE_PATTERNS } from '@shared/constants';
@@ -188,6 +190,15 @@ export function createClaudeCodeAdapter(
       if (err instanceof AppError) throw err;
       // Path doesn't exist — fine, nothing to delete
     }
+  }
+
+  /** Generate a human-readable description for an LSP server from its core data. */
+  function lspDescription(core: LspServerCore): string {
+    const exts = Object.keys(core.extensionToLanguage);
+    if (exts.length === 0) return `LSP: ${core.command}`;
+    const shown = exts.slice(0, 4).join(', ');
+    const more = exts.length > 4 ? `, +${exts.length - 4} more` : '';
+    return `LSP: ${core.command} (${shown}${more})`;
   }
 
   // -- Scan context for scope parameterization --
@@ -500,119 +511,259 @@ export function createClaudeCodeAdapter(
       pluginEnabled: isEnabled,
     });
 
+    // Resolve component subdirectory — check installPath first, then .claude/ subdirectory
+    async function resolveSubdir(subdir: string): Promise<string | null> {
+      const direct = join(installPath, subdir);
+      if (await isDir(direct).catch(() => false)) return direct;
+      const dotClaude = join(installPath, '.claude', subdir);
+      if (await isDir(dotClaude).catch(() => false)) return dotClaude;
+      return null;
+    }
+
     // Scan skills subdirectory
-    const skillsPath = join(installPath, 'skills');
+    const skillsPath = await resolveSubdir('skills');
+    if (skillsPath) {
+      try {
+        const entries = await configIO.listDir(skillsPath);
+        for (const entry of entries) {
+          const entryPath = join(skillsPath, entry);
+          if (!(await isDir(entryPath))) continue;
+
+          const skillMd = join(entryPath, 'SKILL.md');
+          if (!(await configIO.exists(skillMd))) continue;
+
+          try {
+            const { frontmatter, content } = await configIO.readYAMLFrontmatter(skillMd);
+            const fm = (frontmatter as Record<string, unknown>) ?? {};
+
+            const core: SkillCore = {
+              description: String(fm.description ?? ''),
+              content,
+            };
+
+            const skillName = String(fm.name ?? entry);
+
+            components.push({
+              id: {
+                tool: TOOL_ID,
+                type: 'skill',
+                name: `${pluginKey}/${skillName}`,
+                scope: 'plugin',
+              },
+              core,
+              extensions: makeExtensions(),
+              configPath: skillMd,
+              tracking: 'detected',
+              version: pluginVersion,
+              description: core.description || undefined,
+            });
+          } catch (err) {
+            logger.warn(MODULE, `Failed to parse plugin skill: ${skillMd}`, err);
+          }
+        }
+      } catch {
+        // skills listing failed — fine
+      }
+    }
+
+    // Scan commands subdirectory
+    const commandsPath = await resolveSubdir('commands');
+    if (commandsPath) {
+      try {
+        const entries = await configIO.listDir(commandsPath, '*.md');
+        for (const entry of entries) {
+          const filePath = join(commandsPath, entry);
+          try {
+            const { frontmatter, content } = await configIO.readYAMLFrontmatter(filePath);
+            const fm = (frontmatter as Record<string, unknown>) ?? {};
+            const name = String(fm.name ?? basename(entry, '.md'));
+
+            const core: CommandCore = {
+              description: fm.description ? String(fm.description) : undefined,
+              content,
+            };
+
+            components.push({
+              id: { tool: TOOL_ID, type: 'command', name: `${pluginKey}/${name}`, scope: 'plugin' },
+              core,
+              extensions: makeExtensions(),
+              configPath: filePath,
+              tracking: 'detected',
+              version: pluginVersion,
+              description: core.description || undefined,
+            });
+          } catch (err) {
+            logger.warn(MODULE, `Failed to parse plugin command: ${filePath}`, err);
+          }
+        }
+      } catch {
+        // commands listing failed — fine
+      }
+    }
+
+    // Scan agents subdirectory
+    const agentsPath = await resolveSubdir('agents');
+    if (agentsPath) {
+      try {
+        const entries = await configIO.listDir(agentsPath, '*.md');
+        for (const entry of entries) {
+          const filePath = join(agentsPath, entry);
+          try {
+            const { frontmatter } = await configIO.readYAMLFrontmatter(filePath);
+            const fm = (frontmatter as Record<string, unknown>) ?? {};
+            const name = String(fm.name ?? basename(entry, '.md'));
+
+            const core: AgentCore = {
+              description: fm.description ? String(fm.description) : '',
+              model: fm.model ? String(fm.model) : undefined,
+              tools: Array.isArray(fm.tools) ? fm.tools.map(String) : undefined,
+              disallowedTools: Array.isArray(fm.disallowedTools)
+                ? fm.disallowedTools.map(String)
+                : undefined,
+              maxTurns: typeof fm.maxTurns === 'number' ? fm.maxTurns : undefined,
+            };
+
+            components.push({
+              id: { tool: TOOL_ID, type: 'agent', name: `${pluginKey}/${name}`, scope: 'plugin' },
+              core,
+              extensions: makeExtensions(),
+              configPath: filePath,
+              tracking: 'detected',
+              version: pluginVersion,
+              description: fm.description ? String(fm.description) : undefined,
+            });
+          } catch (err) {
+            logger.warn(MODULE, `Failed to parse plugin agent: ${filePath}`, err);
+          }
+        }
+      } catch {
+        // agents listing failed — fine
+      }
+    }
+
+    // Scan LSP servers from .lsp-servers.json (Source B — fallback for imported plugins)
+    const lspPath = join(installPath, '.lsp-servers.json');
     try {
-      const entries = await configIO.listDir(skillsPath);
-      for (const entry of entries) {
-        const entryPath = join(skillsPath, entry);
-        if (!(await isDir(entryPath))) continue;
+      if (await configIO.exists(lspPath)) {
+        const lspData = (await configIO.readJSON(lspPath)) as Record<string, unknown>;
+        for (const [serverName, config] of Object.entries(lspData)) {
+          if (!config || typeof config !== 'object') continue;
+          const cfg = config as Record<string, unknown>;
+          if (typeof cfg.command !== 'string') continue;
 
-        const skillMd = join(entryPath, 'SKILL.md');
-        if (!(await configIO.exists(skillMd))) continue;
-
-        try {
-          const { frontmatter, content } = await configIO.readYAMLFrontmatter(skillMd);
-          const fm = (frontmatter as Record<string, unknown>) ?? {};
-
-          const core: SkillCore = {
-            description: String(fm.description ?? ''),
-            content,
+          const core: LspServerCore = {
+            command: cfg.command,
+            args: Array.isArray(cfg.args) ? cfg.args.map(String) : undefined,
+            extensionToLanguage:
+              cfg.extensionToLanguage && typeof cfg.extensionToLanguage === 'object'
+                ? (cfg.extensionToLanguage as Record<string, string>)
+                : {},
           };
-
-          const skillName = String(fm.name ?? entry);
 
           components.push({
             id: {
               tool: TOOL_ID,
-              type: 'skill',
-              name: `${pluginKey}/${skillName}`,
+              type: 'lsp-server',
+              name: `${pluginKey}/${serverName}`,
               scope: 'plugin',
             },
             core,
             extensions: makeExtensions(),
-            configPath: skillMd,
+            configPath: lspPath,
             tracking: 'detected',
             version: pluginVersion,
-            description: core.description || undefined,
+            description: lspDescription(core),
           });
-        } catch (err) {
-          logger.warn(MODULE, `Failed to parse plugin skill: ${skillMd}`, err);
         }
       }
     } catch {
-      // no skills/ subdirectory — fine
+      // no .lsp-servers.json — fine
     }
 
-    // Scan commands subdirectory
-    const commandsPath = join(installPath, 'commands');
-    try {
-      const entries = await configIO.listDir(commandsPath, '*.md');
-      for (const entry of entries) {
-        const filePath = join(commandsPath, entry);
-        try {
-          const { frontmatter, content } = await configIO.readYAMLFrontmatter(filePath);
-          const fm = (frontmatter as Record<string, unknown>) ?? {};
-          const name = String(fm.name ?? basename(entry, '.md'));
+    return components;
+  }
 
-          const core: CommandCore = {
-            description: fm.description ? String(fm.description) : undefined,
-            content,
-          };
+  /** Scan marketplace manifests for LSP servers in installed plugins (Source A). */
+  async function scanMarketplaceLspServers(
+    installedPlugins: Map<
+      string,
+      { pluginName: string; marketplace: string; version: string; isEnabled: boolean }
+    >,
+  ): Promise<Component[]> {
+    const components: Component[] = [];
+    const marketplacesDir = join(pluginsDir(), 'marketplaces');
 
-          components.push({
-            id: { tool: TOOL_ID, type: 'command', name: `${pluginKey}/${name}`, scope: 'plugin' },
-            core,
-            extensions: makeExtensions(),
-            configPath: filePath,
-            tracking: 'detected',
-            version: pluginVersion,
-            description: core.description || undefined,
-          });
-        } catch (err) {
-          logger.warn(MODULE, `Failed to parse plugin command: ${filePath}`, err);
-        }
+    // Group plugins by marketplace to avoid reading the same manifest multiple times
+    const byMarketplace = new Map<string, typeof installedPlugins>();
+    for (const [pluginKey, info] of installedPlugins) {
+      if (!info.marketplace) continue;
+      let group = byMarketplace.get(info.marketplace);
+      if (!group) {
+        group = new Map();
+        byMarketplace.set(info.marketplace, group);
       }
-    } catch {
-      // no commands/ subdirectory — fine
+      group.set(pluginKey, info);
     }
 
-    // Scan agents subdirectory
-    const agentsPath = join(installPath, 'agents');
-    try {
-      const entries = await configIO.listDir(agentsPath, '*.md');
-      for (const entry of entries) {
-        const filePath = join(agentsPath, entry);
-        try {
-          const { frontmatter } = await configIO.readYAMLFrontmatter(filePath);
-          const fm = (frontmatter as Record<string, unknown>) ?? {};
-          const name = String(fm.name ?? basename(entry, '.md'));
+    for (const [marketplace, plugins] of byMarketplace) {
+      const manifestPath = join(marketplacesDir, marketplace, '.claude-plugin', 'marketplace.json');
 
-          const core: AgentCore = {
-            description: fm.description ? String(fm.description) : '',
-            model: fm.model ? String(fm.model) : undefined,
-            tools: Array.isArray(fm.tools) ? fm.tools.map(String) : undefined,
-            disallowedTools: Array.isArray(fm.disallowedTools)
-              ? fm.disallowedTools.map(String)
-              : undefined,
-            maxTurns: typeof fm.maxTurns === 'number' ? fm.maxTurns : undefined,
-          };
+      try {
+        if (!(await configIO.exists(manifestPath))) continue;
+        const raw = (await configIO.readJSON(manifestPath)) as GitMarketplaceManifest;
+        if (!Array.isArray(raw?.plugins)) continue;
 
-          components.push({
-            id: { tool: TOOL_ID, type: 'agent', name: `${pluginKey}/${name}`, scope: 'plugin' },
-            core,
-            extensions: makeExtensions(),
-            configPath: filePath,
-            tracking: 'detected',
-            version: pluginVersion,
-            description: fm.description ? String(fm.description) : undefined,
-          });
-        } catch (err) {
-          logger.warn(MODULE, `Failed to parse plugin agent: ${filePath}`, err);
+        for (const entry of raw.plugins) {
+          if (!entry.lspServers || typeof entry.lspServers !== 'object') continue;
+
+          // Find the installed plugin that matches this marketplace entry
+          let matchedKey: string | undefined;
+          let matchedInfo:
+            | (typeof installedPlugins extends Map<string, infer V> ? V : never)
+            | undefined;
+          for (const [pluginKey, info] of plugins) {
+            if (info.pluginName === entry.name) {
+              matchedKey = pluginKey;
+              matchedInfo = info;
+              break;
+            }
+          }
+          if (!matchedKey || !matchedInfo) continue;
+
+          for (const [serverName, config] of Object.entries(entry.lspServers)) {
+            if (!config || typeof config.command !== 'string') continue;
+
+            const core: LspServerCore = {
+              command: config.command,
+              args: config.args,
+              extensionToLanguage: config.extensionToLanguage ?? {},
+            };
+
+            components.push({
+              id: {
+                tool: TOOL_ID,
+                type: 'lsp-server',
+                name: `${matchedKey}/${serverName}`,
+                scope: 'plugin',
+              },
+              core,
+              extensions: {
+                pluginKey: matchedKey,
+                pluginName: matchedInfo.pluginName,
+                marketplace,
+                pluginVersion: matchedInfo.version,
+                pluginEnabled: matchedInfo.isEnabled,
+              },
+              configPath: manifestPath,
+              tracking: 'detected',
+              version: matchedInfo.version,
+              description: lspDescription(core),
+            });
+          }
         }
+      } catch (err) {
+        logger.warn(MODULE, `Failed to scan marketplace LSP servers: ${manifestPath}`, err);
       }
-    } catch {
-      // no agents/ subdirectory — fine
     }
 
     return components;
@@ -621,6 +772,12 @@ export function createClaudeCodeAdapter(
   async function scanPlugins(): Promise<Component[]> {
     const components: Component[] = [];
     const regPath = installedPluginsPath();
+
+    // Collect installed plugin metadata for marketplace LSP scan
+    const installedPluginMeta = new Map<
+      string,
+      { pluginName: string; marketplace: string; version: string; isEnabled: boolean }
+    >();
 
     try {
       if (!(await configIO.exists(regPath))) return components;
@@ -641,6 +798,14 @@ export function createClaudeCodeAdapter(
 
         for (const entry of entries) {
           if (!entry || typeof entry !== 'object' || !entry.installPath) continue;
+
+          // Track for marketplace LSP scan
+          installedPluginMeta.set(pluginKey, {
+            pluginName,
+            marketplace,
+            version: entry.version,
+            isEnabled,
+          });
 
           let subComponents: Component[] = [];
 
@@ -666,7 +831,7 @@ export function createClaudeCodeAdapter(
             // No scannable sub-components — create a placeholder
             components.push({
               id: { tool: TOOL_ID, type: 'unknown', name: pluginKey, scope: 'plugin' },
-              core: { rawConfig: entry, rawTypeName: 'plugin' },
+              core: { rawTypeName: 'plugin' },
               extensions: {
                 pluginKey,
                 pluginName,
@@ -681,6 +846,36 @@ export function createClaudeCodeAdapter(
       }
     } catch (err) {
       logger.warn(MODULE, `Failed to scan plugins: ${regPath}`, err);
+    }
+
+    // Source A: Scan marketplace manifests for LSP servers (authoritative source)
+    try {
+      const marketplaceLsp = await scanMarketplaceLspServers(installedPluginMeta);
+
+      if (marketplaceLsp.length > 0) {
+        // Build a set of marketplace LSP component names for dedup
+        const marketplaceLspNames = new Set(marketplaceLsp.map((c) => c.id.name));
+
+        // Remove Source B (install-dir) LSP entries that are also in Source A
+        const deduped = components.filter(
+          (c) => c.id.type !== 'lsp-server' || !marketplaceLspNames.has(c.id.name),
+        );
+
+        // Also remove 'unknown' placeholders for plugins that now have real LSP components
+        const pluginsWithLsp = new Set(
+          marketplaceLsp.map((c) => (c.extensions as Record<string, unknown>)?.pluginKey as string),
+        );
+        const finalComponents = deduped.filter(
+          (c) =>
+            c.id.type !== 'unknown' ||
+            !pluginsWithLsp.has((c.extensions as Record<string, unknown>)?.pluginKey as string),
+        );
+
+        finalComponents.push(...marketplaceLsp);
+        return finalComponents;
+      }
+    } catch (err) {
+      logger.warn(MODULE, 'Failed to scan marketplace LSP servers', err);
     }
 
     return components;
@@ -1320,6 +1515,50 @@ export function createClaudeCodeAdapter(
                 tracking: 'managed',
                 version: plugin.version,
                 description: comp.description,
+                extensions: {
+                  pluginKey: plugin.pluginKey,
+                  pluginName: plugin.pluginName,
+                  marketplace: plugin.marketplace,
+                  pluginVersion: plugin.version,
+                  pluginEnabled: plugin.enabled,
+                },
+              });
+              break;
+            }
+            case 'lsp-server': {
+              const core = comp.core as LspServerCore;
+              const lspFilePath = join(installPath, '.lsp-servers.json');
+              assertPathWithin(lspFilePath, installPath);
+
+              let lspData: Record<string, unknown> = {};
+              try {
+                if (await configIO.exists(lspFilePath)) {
+                  lspData = (await configIO.readJSON(lspFilePath)) as Record<string, unknown>;
+                }
+              } catch {
+                // Start fresh
+              }
+
+              lspData[leafName] = {
+                command: core.command,
+                ...(core.args ? { args: core.args } : {}),
+                extensionToLanguage: core.extensionToLanguage,
+              };
+
+              await configIO.writeJSON(lspFilePath, lspData);
+
+              installedComponents.push({
+                id: {
+                  tool: TOOL_ID,
+                  type: 'lsp-server',
+                  name: `${plugin.pluginKey}/${leafName}`,
+                  scope: 'plugin',
+                },
+                core,
+                configPath: lspFilePath,
+                tracking: 'managed',
+                version: plugin.version,
+                description: lspDescription(core),
                 extensions: {
                   pluginKey: plugin.pluginKey,
                   pluginName: plugin.pluginName,

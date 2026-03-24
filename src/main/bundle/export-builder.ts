@@ -110,6 +110,7 @@ export function buildBundle(
   selectedIds: ComponentId[],
   allComponents: Component[],
   options: ExportOptions,
+  marketplaceSources?: Map<string, { sourceId: string; url: string }>,
 ): Bundle {
   const selected = allComponents.filter((c) =>
     selectedIds.some((id) => componentIdEquals(c.id, id)),
@@ -152,14 +153,24 @@ export function buildBundle(
   }
 
   bundle.plugins = Array.from(pluginMap.entries()).map(([pluginKey, { components, ext }]) => {
+    const marketplace = (ext.marketplace as string) ?? '';
     const plugin: PortablePlugin = {
       pluginKey,
       pluginName: (ext.pluginName as string) ?? pluginKey,
-      marketplace: (ext.marketplace as string) ?? '',
+      marketplace,
       version: (ext.pluginVersion as string) ?? undefined,
       enabled: (ext.pluginEnabled as boolean) ?? true,
       components: components.map(toPortable),
     };
+
+    // Attach marketplace source URL for re-download
+    if (marketplaceSources && marketplace) {
+      const src = marketplaceSources.get(marketplace);
+      if (src) {
+        plugin.marketplaceSource = { sourceId: src.sourceId, url: src.url };
+      }
+    }
+
     return plugin;
   });
 

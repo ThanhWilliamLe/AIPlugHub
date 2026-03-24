@@ -69,6 +69,12 @@ function resetStores() {
 beforeEach(() => {
   resetStores();
   vi.mocked(window.aiplughub.browse.getEntries).mockResolvedValue(MOCK_ENTRIES);
+  // Dismiss Getting Started overlay so browse content is visible for these tests
+  vi.mocked(window.aiplughub.preferences.get).mockResolvedValue({
+    rescanOnLaunch: false,
+    setupComplete: true,
+    gettingStartedDismissed: true,
+  });
 });
 
 describe('BrowseTab', () => {
@@ -99,7 +105,9 @@ describe('BrowseTab', () => {
 
   it('shows error banner when fetch fails but has cached data', async () => {
     // Mock getEntries to reject, so loadEntries sets error state
-    vi.mocked(window.aiplughub.browse.getEntries).mockRejectedValueOnce(new Error('Partial failure'));
+    vi.mocked(window.aiplughub.browse.getEntries).mockRejectedValueOnce(
+      new Error('Partial failure'),
+    );
     // Pre-populate entries to simulate cached data
     useBrowseStore.setState({ entries: MOCK_ENTRIES });
     render(<BrowseTab />);

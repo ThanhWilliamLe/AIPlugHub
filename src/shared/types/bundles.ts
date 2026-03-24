@@ -54,6 +54,8 @@ export type PortablePlugin = {
   version?: string;
   enabled: boolean;
   author?: { name: string; email?: string; url?: string };
+  /** Marketplace source URL — used by importer to re-download the plugin */
+  marketplaceSource?: { sourceId: string; url: string };
   components: PortableComponent[];
 };
 

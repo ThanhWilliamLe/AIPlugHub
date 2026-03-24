@@ -334,4 +334,49 @@ describe('buildBundle — plugin grouping (R1)', () => {
     expect(bundle.plugins).toHaveLength(0);
     expect(bundle.components).toHaveLength(1);
   });
+
+  it('populates marketplaceSource on plugin from marketplace sources map', () => {
+    const components = [makePluginComponent(pluginSkillId)];
+    const marketplaceSources = new Map([
+      ['workflows', { sourceId: 'workflows', url: 'https://github.com/wshobson/agents' }],
+    ]);
+    const bundle = buildBundle([pluginSkillId], components, {}, marketplaceSources);
+
+    expect(bundle.plugins[0].marketplaceSource).toEqual({
+      sourceId: 'workflows',
+      url: 'https://github.com/wshobson/agents',
+    });
+  });
+
+  it('omits marketplaceSource when marketplace not in sources map', () => {
+    const components = [makePluginComponent(pluginSkillId)];
+    const bundle = buildBundle([pluginSkillId], components, {});
+
+    expect(bundle.plugins[0].marketplaceSource).toBeUndefined();
+  });
+
+  it('omits marketplaceSource when plugin has empty marketplace string', () => {
+    const emptyMktId: ComponentId = {
+      tool: 'claude-code',
+      type: 'skill',
+      name: 'local-plugin/my-skill',
+      scope: 'plugin',
+    };
+    const comp = makeComponent({
+      id: emptyMktId,
+      extensions: {
+        pluginKey: 'local-plugin',
+        pluginName: 'local-plugin',
+        marketplace: '',
+        pluginVersion: '1.0.0',
+        pluginEnabled: true,
+      },
+      core: { description: 'test', content: '# test' },
+    });
+    const marketplaceSources = new Map([
+      ['', { sourceId: '', url: 'https://should-not-match.com' }],
+    ]);
+    const bundle = buildBundle([emptyMktId], [comp], {}, marketplaceSources);
+    expect(bundle.plugins[0].marketplaceSource).toBeUndefined();
+  });
 });

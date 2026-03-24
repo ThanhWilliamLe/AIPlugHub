@@ -3,7 +3,7 @@
  * filter empty state with type filters, and clear filters button.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowseTab } from '@renderer/components/browse/BrowseTab';
 import { useBrowseStore } from '@renderer/stores/browse-store';
@@ -55,6 +55,12 @@ function resetStores() {
 beforeEach(() => {
   resetStores();
   vi.mocked(window.aiplughub.browse.getEntries).mockResolvedValue(MOCK_ENTRIES);
+  // Dismiss Getting Started overlay so browse content is visible for these tests
+  vi.mocked(window.aiplughub.preferences.get).mockResolvedValue({
+    rescanOnLaunch: false,
+    setupComplete: true,
+    gettingStartedDismissed: true,
+  });
 });
 
 describe('BrowseTab — offline banner', () => {
@@ -99,19 +105,18 @@ describe('BrowseTab — error banner (partial failure)', () => {
     await waitFor(() => {
       expect(screen.getByText('Partial error occurred')).toBeInTheDocument();
     });
-    expect(screen.getByText('Dismiss')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(within(alert).getByText('Dismiss')).toBeInTheDocument();
   });
 
   it('clears error when Dismiss is clicked', async () => {
-    vi.mocked(window.aiplughub.browse.getEntries).mockRejectedValueOnce(
-      new Error('Some error'),
-    );
+    vi.mocked(window.aiplughub.browse.getEntries).mockRejectedValueOnce(new Error('Some error'));
     useBrowseStore.setState({ entries: MOCK_ENTRIES });
     render(<BrowseTab />);
     await waitFor(() => {
-      expect(screen.getByText('Dismiss')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Dismiss'));
+    fireEvent.click(within(screen.getByRole('alert')).getByText('Dismiss'));
     expect(useBrowseStore.getState().error).toBeNull();
   });
 
@@ -139,11 +144,14 @@ describe('BrowseTab — empty state with no plugins from sources', () => {
     vi.mocked(window.aiplughub.browse.getEntries).mockResolvedValue([]);
     useBrowseStore.setState({ entries: [], isLoading: false, error: null });
     render(<BrowseTab />);
-    await waitFor(() => {
-      // "No plugins available" is the title of the empty state
-      const headings = screen.getAllByText(/no plugins available/i);
-      expect(headings.length).toBeGreaterThan(0);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        // "No plugins available" is the title of the empty state
+        const headings = screen.getAllByText(/no plugins available/i);
+        expect(headings.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 },
+    );
   });
 });
 

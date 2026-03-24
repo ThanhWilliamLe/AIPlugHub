@@ -31,33 +31,32 @@ export const COMPONENT_TYPE_META: Record<
   'mcp-server': {
     label: 'MCP Server',
     color: '#3B8A7A',
-    tooltip:
-      'A background service that gives your AI tool new capabilities like file access or web search',
+    tooltip: 'Connects your AI to an external tool',
   },
   skill: {
     label: 'Skill',
     color: '#7B6CB5',
-    tooltip: 'Instructions that teach your AI tool how to handle specific tasks',
+    tooltip: 'Teaches your AI a specific capability',
   },
   command: {
     label: 'Command',
     color: '#4A7FB5',
-    tooltip: 'A slash command shortcut you can type to trigger an action',
+    tooltip: 'A slash command you can type',
   },
   hook: {
     label: 'Hook',
     color: '#D4713B',
-    tooltip: 'An automatic action that runs at specific moments during AI tool usage',
+    tooltip: 'Automation that runs on AI events',
   },
   agent: {
     label: 'Agent',
     color: '#9B6E8A',
-    tooltip: 'A specialized sub-agent that can handle complex multi-step tasks autonomously',
+    tooltip: 'A specialized AI for a specific job',
   },
   'context-file': {
     label: 'Context File',
     color: '#7A8B6E',
-    tooltip: 'A file that provides background knowledge and instructions to your AI tool',
+    tooltip: 'Background info the AI reads',
   },
   'lsp-server': {
     label: 'LSP Server',

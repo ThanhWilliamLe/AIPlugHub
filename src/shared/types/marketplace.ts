@@ -4,7 +4,7 @@
  */
 
 import type { ToolId } from './tools';
-import type { ComponentType } from './components';
+import type { ComponentType, LspServerCore } from './components';
 import type { PortableComponent, PluginOrigin } from './bundles';
 
 // ─── Marketplace Source Config ──────────────────────────────────────
@@ -98,6 +98,37 @@ export type GitMarketplacePlugin = {
   version?: string;
   author?: string | { name?: string; email?: string; url?: string };
   category?: string;
+  /** LSP servers provided by this plugin */
+  lspServers?: Record<string, LspServerCore>;
+};
+
+// ─── Suggested Sources Manifest (v1.8.0 — DATA-01) ─────────────────
+
+/** A curated marketplace source suggested during onboarding */
+export type SuggestedSource = {
+  sourceId: string;
+  url: string;
+  displayName: string;
+  description: string;
+  sourceType: MarketplaceSourceType;
+  tools: ToolId[];
+  defaultChecked: boolean;
+};
+
+/** A featured plugin shown in the Getting Started section */
+export type FeaturedPlugin = {
+  name: string;
+  description: string;
+  sourceId: string;
+  ref: string;
+  tools: ToolId[];
+};
+
+/** Manifest of suggested sources and featured plugins for onboarding */
+export type SuggestedSourcesManifest = {
+  version: number;
+  sources: SuggestedSource[];
+  featured: FeaturedPlugin[];
 };
 
 /** URL index format */

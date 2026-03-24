@@ -1,16 +1,17 @@
 /**
  * App shell — titlebar, tab bar, content area.
- * 3 tabs: My Setup | Browse | Transfer + Settings gear.
+ * 3 tabs: Browse | My Setup | Transfer + Settings gear.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Tab } from '@renderer/stores/ui-store';
 import { useUiStore } from '@renderer/stores/ui-store';
+import { GETTING_STARTED_EXPAND_EVENT } from '@renderer/components/browse/GettingStarted';
 import { cn } from '@renderer/lib/utils';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'my-setup', label: 'My Setup' },
   { id: 'browse', label: 'Browse' },
+  { id: 'my-setup', label: 'My Setup' },
   { id: 'transfer', label: 'Transfer' },
 ];
 
@@ -22,6 +23,22 @@ export function AppShell({ children }: AppShellProps) {
   const activeTab = useUiStore((s) => s.activeTab);
   const setActiveTab = useUiStore((s) => s.setActiveTab);
   const setShowSettings = useUiStore((s) => s.setShowSettings);
+
+  // Launch pulse: animate the Getting Started button for a few seconds on mount
+  const [launchPulse, setLaunchPulse] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setLaunchPulse(false), 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleGettingStarted = useCallback(() => {
+    setActiveTab('browse');
+    // Defer event dispatch to ensure GettingStarted is mounted and listening
+    // (setActiveTab causes BrowseTab mount which registers the listener in useEffect)
+    requestAnimationFrame(() => {
+      document.dispatchEvent(new CustomEvent(GETTING_STARTED_EXPAND_EVENT));
+    });
+  }, [setActiveTab]);
 
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -111,29 +128,55 @@ export function AppShell({ children }: AppShellProps) {
       </header>
 
       {/* Tab bar */}
-      <nav className="flex gap-1 px-4 py-1.5 border-b border-sand-border" role="tablist">
+      <nav
+        className="flex items-center gap-1 px-4 py-1.5 border-b border-sand-border"
+        role="tablist"
+      >
         {TABS.map((tab, idx) => (
-          <button
-            key={tab.id}
-            id={`tab-${tab.id}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`tabpanel-${tab.id}`}
-            tabIndex={activeTab === tab.id ? 0 : -1}
-            title={`${tab.label} (Ctrl+${idx + 1})`}
-            className={cn(
-              'px-4 py-1.5 rounded-md text-sm font-medium transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-olive/40',
-              activeTab === tab.id
-                ? 'bg-sand-surface text-sand-text'
-                : 'text-sand-secondary hover:text-sand-text hover:bg-sand-surface/40',
+          <div key={tab.id} className="relative">
+            <button
+              id={`tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`tabpanel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              title={`${tab.label} (Ctrl+${idx + 1})`}
+              className={cn(
+                'px-4 py-1.5 rounded-md text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-olive/40',
+                activeTab === tab.id
+                  ? 'bg-sand-surface text-sand-text'
+                  : 'text-sand-secondary hover:text-sand-text hover:bg-sand-surface/40',
+              )}
+              onClick={() => setActiveTab(tab.id)}
+              onKeyDown={handleTabKeyDown}
+            >
+              {tab.label}
+            </button>
+            {/* Superscript "Getting Started" button on Browse tab (UX-10) */}
+            {tab.id === 'browse' && (
+              <button
+                type="button"
+                onClick={handleGettingStarted}
+                className={cn(
+                  'absolute -top-2 -right-2 px-2 py-0.5 rounded-full',
+                  'bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400',
+                  'text-white font-semibold text-[10px] leading-none tracking-wide',
+                  'shadow-sm shadow-orange-300/40',
+                  'hover:from-amber-500 hover:via-orange-500 hover:to-rose-500',
+                  'hover:shadow-md hover:shadow-orange-400/40 hover:scale-110',
+                  'transition-all duration-200',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60',
+                  launchPulse && 'animate-bounce',
+                )}
+                aria-label="Open Getting Started guide"
+                title="Getting Started"
+              >
+                Guide
+              </button>
             )}
-            onClick={() => setActiveTab(tab.id)}
-            onKeyDown={handleTabKeyDown}
-          >
-            {tab.label}
-          </button>
+          </div>
         ))}
       </nav>
 

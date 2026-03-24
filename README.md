@@ -64,7 +64,7 @@ npm run dist         # Build + package Windows installer
 npm run dist:mac     # Build + package macOS .dmg
 npm run dist:linux   # Build + package Linux AppImage
 npm run dist:all     # Build + package all platforms
-npm test             # Run tests (1803 passing)
+npm test             # Run tests (1864 passing)
 npm run lint         # ESLint
 npm run format       # Prettier
 npm run typecheck    # TypeScript strict check
@@ -78,7 +78,7 @@ npm run test:e2e     # Playwright E2E tests (28 tests)
 - **Tailwind v4 + Radix UI** — styling and accessible primitives
 - **Zustand** — state management
 - **Fuse.js** — client-side fuzzy search
-- **Vitest + React Testing Library** — 1803 unit/integration tests
+- **Vitest + React Testing Library** — 1864 unit/integration tests
 - **Playwright** — 28 E2E tests (smoke + critical flows + accessibility)
 
 ## How it works

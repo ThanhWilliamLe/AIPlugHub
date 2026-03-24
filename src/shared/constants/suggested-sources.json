@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "sourceId": "npu-ai-marketplace",
+      "url": "https://github.com/npu-ai/claude-code-plugins",
+      "displayName": "NPU AI Plugins",
+      "description": "Community-curated plugin collection for Claude Code",
+      "sourceType": "git-marketplace",
+      "tools": ["claude-code"],
+      "defaultChecked": true
+    }
+  ],
+  "featured": [
+    {
+      "name": "everything-claude-code",
+      "description": "Comprehensive plugin suite with 130+ skills, agents, and commands",
+      "sourceId": "npu-ai-marketplace",
+      "ref": "everything-claude-code",
+      "tools": ["claude-code"]
+    }
+  ]
+}

@@ -443,7 +443,18 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
           }
         }
 
-        const bundle = buildBundle(componentIds, allComponents, exportOptions);
+        // Fetch marketplace source URLs for bundle portability
+        let marketplaceSources: Map<string, { sourceId: string; url: string }> | undefined;
+        try {
+          const sources = await deps.marketplace.getSources();
+          marketplaceSources = new Map(
+            sources.map((s) => [s.sourceId, { sourceId: s.sourceId, url: s.url }]),
+          );
+        } catch {
+          // Non-fatal — bundle works without source URLs, just less portable
+        }
+
+        const bundle = buildBundle(componentIds, allComponents, exportOptions, marketplaceSources);
         const json = serializeBundle(bundle);
         return ok(json);
       } catch (err) {

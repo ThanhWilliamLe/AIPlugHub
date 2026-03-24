@@ -614,9 +614,9 @@ describe('ClaudeCodeAdapter.install', () => {
 
   it('throws ADAPTER_UNSUPPORTED for unsupported types', async () => {
     const portable: PortableComponent = {
-      type: 'lsp-server',
-      name: 'some-lsp',
-      core: { rawConfig: {}, rawTypeName: 'lsp-server' },
+      type: 'output-style',
+      name: 'some-style',
+      core: { rawConfig: {}, rawTypeName: 'output-style' },
     };
 
     try {
@@ -820,7 +820,7 @@ describe('ClaudeCodeAdapter.uninstall', () => {
     try {
       await adapter.uninstall({
         tool: 'claude-code',
-        type: 'lsp-server',
+        type: 'output-style',
         name: 'something',
         scope: 'user',
       });
@@ -1200,6 +1200,141 @@ describe('ClaudeCodeAdapter.scanPlugins', () => {
     expect(placeholder!.version).toBe('0.1.0');
   });
 
+  it('discovers sub-components in .claude/ subdirectory', async () => {
+    const pluginsDir = join(rootPath, 'plugins');
+    await mkdir(pluginsDir, { recursive: true });
+
+    const installDir = join(pluginsDir, 'cache', 'impeccable@impeccable');
+    await mkdir(join(installDir, '.claude', 'skills', 'polish'), { recursive: true });
+    await writeFile(
+      join(installDir, '.claude', 'skills', 'polish', 'SKILL.md'),
+      '---\nname: polish\ndescription: Final polish pass\n---\nPolish the UI',
+    );
+
+    await mkdir(join(installDir, '.claude', 'commands'), { recursive: true });
+    await writeFile(
+      join(installDir, '.claude', 'commands', 'audit.md'),
+      '---\nname: audit\ndescription: Run audit\n---\nAudit everything',
+    );
+
+    await mkdir(join(installDir, '.claude', 'agents'), { recursive: true });
+    await writeFile(
+      join(installDir, '.claude', 'agents', 'reviewer.md'),
+      '---\nname: reviewer\ndescription: Review agent\n---\nYou review code.',
+    );
+
+    await writeFile(
+      join(pluginsDir, 'installed_plugins.json'),
+      JSON.stringify({
+        plugins: {
+          'impeccable@impeccable': [
+            {
+              scope: 'user',
+              installPath: installDir,
+              version: '1.5.1',
+              installedAt: '2026-01-01T00:00:00Z',
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
+
+    const components = await adapter.scan();
+    const impeccable = components.filter(
+      (c) => c.id.scope === 'plugin' && c.id.name.startsWith('impeccable@impeccable/'),
+    );
+
+    expect(impeccable.length).toBe(3);
+    const types = impeccable.map((c) => c.id.type).sort();
+    expect(types).toEqual(['agent', 'command', 'skill']);
+
+    const placeholder = components.find(
+      (c) => c.id.name === 'impeccable@impeccable' && c.id.type === 'unknown',
+    );
+    expect(placeholder).toBeUndefined();
+  });
+
+  it('prefers direct skills/ over .claude/skills/ when both exist', async () => {
+    const pluginsDir = join(rootPath, 'plugins');
+    await mkdir(pluginsDir, { recursive: true });
+
+    const installDir = join(pluginsDir, 'cache', 'dual-plugin@mp');
+
+    await mkdir(join(installDir, 'skills', 'direct-skill'), { recursive: true });
+    await writeFile(
+      join(installDir, 'skills', 'direct-skill', 'SKILL.md'),
+      '---\nname: direct-skill\ndescription: From direct\n---\nDirect',
+    );
+    await mkdir(join(installDir, '.claude', 'skills', 'dotclaude-skill'), { recursive: true });
+    await writeFile(
+      join(installDir, '.claude', 'skills', 'dotclaude-skill', 'SKILL.md'),
+      '---\nname: dotclaude-skill\ndescription: From .claude\n---\nDotClaude',
+    );
+
+    await writeFile(
+      join(pluginsDir, 'installed_plugins.json'),
+      JSON.stringify({
+        plugins: {
+          'dual-plugin@mp': [
+            {
+              scope: 'user',
+              installPath: installDir,
+              version: '1.0.0',
+              installedAt: '2026-01-01T00:00:00Z',
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
+
+    const components = await adapter.scan();
+    const skills = components.filter(
+      (c) =>
+        c.id.scope === 'plugin' && c.id.type === 'skill' && c.id.name.startsWith('dual-plugin@mp/'),
+    );
+
+    expect(skills).toHaveLength(1);
+    expect(skills[0].id.name).toBe('dual-plugin@mp/direct-skill');
+  });
+
+  it('placeholder core does not contain install path or rawConfig', async () => {
+    const pluginsDir = join(rootPath, 'plugins');
+    await mkdir(pluginsDir, { recursive: true });
+
+    const emptyInstall = join(pluginsDir, 'cache', 'bare-plugin@mp');
+    await mkdir(emptyInstall, { recursive: true });
+
+    await writeFile(
+      join(pluginsDir, 'installed_plugins.json'),
+      JSON.stringify({
+        plugins: {
+          'bare-plugin@mp': [
+            {
+              scope: 'user',
+              installPath: emptyInstall,
+              version: '0.1.0',
+              installedAt: '2026-01-01T00:00:00Z',
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
+
+    const components = await adapter.scan();
+    const placeholder = components.find(
+      (c) => c.id.name === 'bare-plugin@mp' && c.id.type === 'unknown',
+    );
+    expect(placeholder).toBeDefined();
+
+    const core = placeholder!.core as Record<string, unknown>;
+    expect(core.rawConfig).toBeUndefined();
+    expect(core.rawTypeName).toBe('plugin');
+    expect(JSON.stringify(core)).not.toContain('installPath');
+  });
+
   it('creates placeholder for plugin with non-existent installPath', async () => {
     const pluginsDir = join(rootPath, 'plugins');
     await mkdir(pluginsDir, { recursive: true });
@@ -1511,5 +1646,319 @@ describe('ClaudeCodeAdapter.getKnownMarketplaces', () => {
 
     const marketplaces = await adapter.getKnownMarketplaces();
     expect(marketplaces).toEqual([]);
+  });
+});
+
+// ─── LSP Server Support ──────────────────────────────────────────────
+
+describe('ClaudeCodeAdapter — LSP server support', () => {
+  // -- Helpers --
+
+  async function createPluginWithLspJson(
+    root: string,
+    pluginKey: string,
+    lspServers: Record<
+      string,
+      { command: string; args?: string[]; extensionToLanguage: Record<string, string> }
+    >,
+  ) {
+    const pluginsDir = join(root, 'plugins');
+    const safeDirName = pluginKey.replace(/[^a-zA-Z0-9@_-]/g, '_');
+    const installPath = join(pluginsDir, safeDirName);
+    await mkdir(installPath, { recursive: true });
+
+    // Write .lsp-servers.json
+    await writeFile(join(installPath, '.lsp-servers.json'), JSON.stringify(lspServers));
+
+    // Register in installed_plugins.json
+    const regPath = join(pluginsDir, 'installed_plugins.json');
+    let data: { version: number; plugins: Record<string, unknown[]> } = { version: 1, plugins: {} };
+    try {
+      data = JSON.parse(await readFile(regPath, 'utf-8'));
+    } catch {
+      /* start fresh */
+    }
+    data.plugins[pluginKey] = [{ version: '1.0.0', installPath }];
+    await writeFile(regPath, JSON.stringify(data));
+
+    // Enable in settings.json
+    const settingsPath = join(root, 'settings.json');
+    let settings: Record<string, unknown> = {};
+    try {
+      settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      /* start fresh */
+    }
+    if (!settings.enabledPlugins) settings.enabledPlugins = {};
+    (settings.enabledPlugins as Record<string, boolean>)[pluginKey] = true;
+    await writeFile(settingsPath, JSON.stringify(settings));
+  }
+
+  async function createMarketplaceManifest(
+    root: string,
+    marketplace: string,
+    plugins: { name: string; lspServers?: Record<string, unknown> }[],
+  ) {
+    const manifestDir = join(root, 'plugins', 'marketplaces', marketplace, '.claude-plugin');
+    await mkdir(manifestDir, { recursive: true });
+    const manifest = {
+      name: marketplace,
+      plugins: plugins.map((p) => ({ ...p, source: `./${p.name}` })),
+    };
+    await writeFile(join(manifestDir, 'marketplace.json'), JSON.stringify(manifest));
+  }
+
+  it('scans LSP servers from .lsp-servers.json (Source B)', async () => {
+    await createPluginWithLspJson(rootPath, 'rust-lsp@test-market', {
+      'rust-analyzer': {
+        command: 'rust-analyzer',
+        extensionToLanguage: { '.rs': 'rust' },
+      },
+    });
+
+    const components = await adapter.scan();
+    const lsp = components.find((c) => c.id.type === 'lsp-server');
+    expect(lsp).toBeDefined();
+    expect(lsp!.id.name).toBe('rust-lsp@test-market/rust-analyzer');
+    expect(lsp!.id.scope).toBe('plugin');
+    expect((lsp!.core as { command: string }).command).toBe('rust-analyzer');
+    expect(
+      (lsp!.core as { extensionToLanguage: Record<string, string> }).extensionToLanguage,
+    ).toEqual({ '.rs': 'rust' });
+  });
+
+  it('scans LSP servers from marketplace manifest (Source A)', async () => {
+    // Register installed plugin (empty install dir — no .lsp-servers.json)
+    const pluginsDir = join(rootPath, 'plugins');
+    const installPath = join(pluginsDir, 'pyright-lsp_test-market');
+    await mkdir(installPath, { recursive: true });
+
+    const regPath = join(pluginsDir, 'installed_plugins.json');
+    await writeFile(
+      regPath,
+      JSON.stringify({
+        version: 1,
+        plugins: { 'pyright-lsp@test-market': [{ version: '1.0.0', installPath }] },
+      }),
+    );
+
+    await writeFile(
+      join(rootPath, 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'pyright-lsp@test-market': true } }),
+    );
+
+    // Create marketplace manifest with lspServers
+    await createMarketplaceManifest(rootPath, 'test-market', [
+      {
+        name: 'pyright-lsp',
+        lspServers: {
+          pyright: {
+            command: 'pyright-langserver',
+            args: ['--stdio'],
+            extensionToLanguage: { '.py': 'python', '.pyi': 'python' },
+          },
+        },
+      },
+    ]);
+
+    const components = await adapter.scan();
+    const lsp = components.find((c) => c.id.type === 'lsp-server');
+    expect(lsp).toBeDefined();
+    expect(lsp!.id.name).toBe('pyright-lsp@test-market/pyright');
+    expect((lsp!.core as { command: string }).command).toBe('pyright-langserver');
+    expect((lsp!.core as { args: string[] }).args).toEqual(['--stdio']);
+  });
+
+  it('marketplace source (A) wins over install-dir source (B) on dedup', async () => {
+    // Source B: .lsp-servers.json with older config
+    await createPluginWithLspJson(rootPath, 'ts-lsp@test-market', {
+      typescript: {
+        command: 'old-tsserver',
+        extensionToLanguage: { '.ts': 'typescript' },
+      },
+    });
+
+    // Source A: marketplace manifest with newer config
+    await createMarketplaceManifest(rootPath, 'test-market', [
+      {
+        name: 'ts-lsp',
+        lspServers: {
+          typescript: {
+            command: 'typescript-language-server',
+            args: ['--stdio'],
+            extensionToLanguage: { '.ts': 'typescript', '.tsx': 'typescriptreact' },
+          },
+        },
+      },
+    ]);
+
+    const components = await adapter.scan();
+    const lspComponents = components.filter((c) => c.id.type === 'lsp-server');
+
+    // Should have exactly 1 (deduped), from Source A
+    expect(lspComponents).toHaveLength(1);
+    expect((lspComponents[0].core as { command: string }).command).toBe(
+      'typescript-language-server',
+    );
+  });
+
+  it('installPlugin writes .lsp-servers.json for LSP components', async () => {
+    const plugin = {
+      pluginKey: 'rust-lsp@test-market',
+      pluginName: 'rust-lsp',
+      marketplace: 'test-market',
+      version: '1.0.0',
+      enabled: true,
+      components: [
+        {
+          type: 'lsp-server' as const,
+          name: 'rust-lsp@test-market/rust-analyzer',
+          core: {
+            command: 'rust-analyzer',
+            extensionToLanguage: { '.rs': 'rust' },
+          },
+        },
+      ],
+    };
+
+    const installed = await adapter.installPlugin(plugin);
+    expect(installed).toHaveLength(1);
+    expect(installed[0].id.type).toBe('lsp-server');
+    expect(installed[0].id.name).toBe('rust-lsp@test-market/rust-analyzer');
+    expect(installed[0].configPath).toContain('.lsp-servers.json');
+
+    // Verify .lsp-servers.json was written
+    const lspPath = installed[0].configPath!;
+    const lspData = JSON.parse(await readFile(lspPath, 'utf-8'));
+    expect(lspData['rust-analyzer']).toEqual({
+      command: 'rust-analyzer',
+      extensionToLanguage: { '.rs': 'rust' },
+    });
+  });
+
+  it('auto-generates description from LspServerCore', async () => {
+    await createPluginWithLspJson(rootPath, 'multi-lsp@test-market', {
+      'ts-server': {
+        command: 'typescript-language-server',
+        extensionToLanguage: {
+          '.ts': 'typescript',
+          '.tsx': 'typescriptreact',
+          '.js': 'javascript',
+          '.jsx': 'javascriptreact',
+          '.mts': 'typescript',
+          '.cts': 'typescript',
+        },
+      },
+      'no-ext': {
+        command: 'bare-server',
+        extensionToLanguage: {},
+      },
+    });
+
+    const components = await adapter.scan();
+    const lspComponents = components.filter((c) => c.id.type === 'lsp-server');
+
+    const tsLsp = lspComponents.find((c) => c.id.name.includes('ts-server'));
+    expect(tsLsp?.description).toBe(
+      'LSP: typescript-language-server (.ts, .tsx, .js, .jsx, +2 more)',
+    );
+
+    const bareLsp = lspComponents.find((c) => c.id.name.includes('no-ext'));
+    expect(bareLsp?.description).toBe('LSP: bare-server');
+  });
+
+  it('LSP-only plugin does not produce unknown placeholder', async () => {
+    // Create a plugin with only .lsp-servers.json (no skills, commands, or agents)
+    await createPluginWithLspJson(rootPath, 'lsp-only@test-market', {
+      gopls: {
+        command: 'gopls',
+        extensionToLanguage: { '.go': 'go' },
+      },
+    });
+
+    const components = await adapter.scan();
+
+    // Should have an lsp-server component, not an unknown placeholder
+    const lsp = components.find(
+      (c) => c.id.name.includes('lsp-only@test-market') && c.id.type === 'lsp-server',
+    );
+    expect(lsp).toBeDefined();
+
+    const unknown = components.find(
+      (c) =>
+        c.id.type === 'unknown' &&
+        (c.extensions as Record<string, unknown>)?.pluginKey === 'lsp-only@test-market',
+    );
+    expect(unknown).toBeUndefined();
+  });
+
+  it('gracefully handles missing marketplace cache', async () => {
+    // Plugin installed but no marketplace manifest exists
+    await createPluginWithLspJson(rootPath, 'orphan-lsp@missing-market', {
+      orphan: {
+        command: 'orphan-server',
+        extensionToLanguage: { '.x': 'x-lang' },
+      },
+    });
+
+    // No marketplace manifest created — Source A will find nothing
+
+    const components = await adapter.scan();
+    // Should still detect via Source B (install dir)
+    const lsp = components.find((c) => c.id.name.includes('orphan-lsp@missing-market/orphan'));
+    expect(lsp).toBeDefined();
+    expect((lsp!.core as { command: string }).command).toBe('orphan-server');
+  });
+
+  it('round-trip: export → uninstall → import → scan', async () => {
+    // 1. Create a plugin with LSP server
+    await createPluginWithLspJson(rootPath, 'roundtrip-lsp@test-market', {
+      analyzer: {
+        command: 'my-analyzer',
+        args: ['--stdio'],
+        extensionToLanguage: { '.xyz': 'xyz-lang' },
+      },
+    });
+
+    // 2. Scan to verify it's detected
+    let components = await adapter.scan();
+    let lsp = components.find((c) => c.id.name.includes('roundtrip-lsp@test-market/analyzer'));
+    expect(lsp).toBeDefined();
+
+    // 3. Simulate export: build a PortablePlugin from the scan result
+    const portablePlugin = {
+      pluginKey: 'roundtrip-lsp@test-market',
+      pluginName: 'roundtrip-lsp',
+      marketplace: 'test-market',
+      version: '1.0.0',
+      enabled: true,
+      components: [
+        {
+          type: 'lsp-server' as const,
+          name: 'roundtrip-lsp@test-market/analyzer',
+          core: lsp!.core,
+        },
+      ],
+    };
+
+    // 4. Uninstall the plugin
+    await adapter.uninstallPlugin('roundtrip-lsp@test-market');
+
+    // 5. Verify it's gone
+    components = await adapter.scan();
+    lsp = components.find((c) => c.id.name.includes('roundtrip-lsp@test-market/analyzer'));
+    expect(lsp).toBeUndefined();
+
+    // 6. Re-import
+    const installed = await adapter.installPlugin(portablePlugin);
+    expect(installed).toHaveLength(1);
+    expect(installed[0].id.type).toBe('lsp-server');
+
+    // 7. Scan again — should be back
+    components = await adapter.scan();
+    lsp = components.find((c) => c.id.name.includes('roundtrip-lsp@test-market/analyzer'));
+    expect(lsp).toBeDefined();
+    expect((lsp!.core as { command: string }).command).toBe('my-analyzer');
+    expect((lsp!.core as { args: string[] }).args).toEqual(['--stdio']);
   });
 });

@@ -10,6 +10,7 @@ export type {
   HookCore,
   AgentCore,
   PromptCore,
+  LspServerCore,
   SkeletonCore,
   CoreSchemaMap,
   CoreSchema,
@@ -26,7 +27,15 @@ export type {
   NativePlugin,
 } from './components';
 
-export { isMcpServer, isSkill, isCommand, isHook, isAgent, isPrompt } from './components';
+export {
+  isMcpServer,
+  isSkill,
+  isCommand,
+  isHook,
+  isAgent,
+  isPrompt,
+  isLspServer,
+} from './components';
 
 export type {
   PluginOrigin,
@@ -65,6 +74,9 @@ export type {
   GitMarketplacePlugin,
   UrlIndexManifest,
   UrlIndexPlugin,
+  SuggestedSource,
+  FeaturedPlugin,
+  SuggestedSourcesManifest,
 } from './marketplace';
 
 export type {
