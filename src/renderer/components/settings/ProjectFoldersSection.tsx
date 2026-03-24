@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useToolStore } from '@renderer/stores/tool-store';
+import { useToastStore } from '@renderer/stores/toast-store';
 import { MAX_PROJECT_FOLDERS } from '@shared/constants';
 import { Button } from '@renderer/components/ui/button';
 import type { ProjectFolder } from '@shared/types';
@@ -19,6 +20,7 @@ export function ProjectFoldersSection() {
 
   const components = useToolStore((s) => s.components);
   const scanAll = useToolStore((s) => s.scanAll);
+  const addToast = useToastStore((s) => s.addToast);
 
   // Load folders on mount and detect missing paths
   useEffect(() => {
@@ -35,7 +37,11 @@ export function ProjectFoldersSection() {
         }
         setMissingPaths(missing);
       })
-      .catch(() => {});
+      .catch((err) =>
+        setError(
+          `Failed to load project folders: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
   }, []);
 
   // Compute component counts per project folder from toolStore
@@ -64,13 +70,18 @@ export function ProjectFoldersSection() {
 
       // Scan the new project folder and trigger a full rescan to update components
       await scanAll();
+
+      addToast({
+        message: `Added "${folder.name}" — check My Setup to see its plugins`,
+        type: 'success',
+      });
     } catch (err: unknown) {
       const message = (err as { message?: string })?.message ?? 'Failed to add folder';
       setError(message);
     } finally {
       setAdding(false);
     }
-  }, [scanAll]);
+  }, [scanAll, addToast]);
 
   const handleRemove = useCallback(
     async (folderPath: string) => {
@@ -99,24 +110,51 @@ export function ProjectFoldersSection() {
 
   const isAtLimit = folders.length >= MAX_PROJECT_FOLDERS;
 
+  const [rescanning, setRescanning] = useState(false);
+
+  const handleRescan = useCallback(async () => {
+    setRescanning(true);
+    try {
+      await scanAll();
+    } finally {
+      setRescanning(false);
+    }
+  }, [scanAll]);
+
   return (
     <section>
-      <h2 className="text-sm font-semibold text-sand-text uppercase tracking-wider mb-1">
-        Project Folders
-      </h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-sand-text uppercase tracking-wider">
+          Project Folders
+        </h2>
+        {folders.length > 0 && (
+          <button
+            type="button"
+            className="text-xs text-sand-secondary hover:text-sand-text transition-colors disabled:opacity-50"
+            onClick={handleRescan}
+            disabled={rescanning}
+            aria-label="Rescan project folders"
+            title="Rescan all project folders"
+          >
+            {rescanning ? 'Scanning...' : '\u21BB Rescan'}
+          </button>
+        )}
+      </div>
       <p className="text-xs text-sand-secondary mb-3">
-        Scan project-specific components from your working directories.
+        Some projects have their own plugins. Add project folders to see them here.
       </p>
 
       {error && (
-        <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded mb-3">{error}</div>
+        <div className="text-xs text-accent-destructive bg-accent-destructive/10 px-3 py-2 rounded mb-3 select-all">
+          {error}
+        </div>
       )}
 
       {folders.length === 0 ? (
         <div className="text-sm text-sand-muted px-4 py-6 text-center border border-dashed border-sand-border rounded-lg">
           No project folders registered.
           <br />
-          Add a working directory to see its project-specific components.
+          Add a project folder to see its plugins here.
         </div>
       ) : (
         <div className="space-y-2">
@@ -150,8 +188,8 @@ export function ProjectFoldersSection() {
                   </p>
                   <p className="text-xs text-sand-muted mt-0.5">
                     {count === 0
-                      ? 'No components found'
-                      : `${count} component${count === 1 ? '' : 's'} found`}
+                      ? 'No plugins found'
+                      : `${count} plugin${count === 1 ? '' : 's'} found`}
                   </p>
                 </div>
                 <button

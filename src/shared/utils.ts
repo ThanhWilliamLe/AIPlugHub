@@ -2,7 +2,7 @@
  * Shared utility functions used across main, renderer, and preload.
  */
 
-import type { ComponentId, PortableComponent } from './types';
+import type { ComponentId, PortableComponent, MarketplaceSourceType } from './types';
 
 /** Deep equality check for plain objects, arrays, and primitives */
 export function deepEqual(a: unknown, b: unknown): boolean {
@@ -97,3 +97,69 @@ export function isSensitiveEnvValue(value: string): boolean {
     value,
   );
 }
+
+/**
+ * Normalize flexible marketplace source URL input into a canonical HTTPS URL.
+ * Accepts: owner/repo, github.com/owner/repo, git@github.com:owner/repo.git,
+ * https://github.com/owner/repo/tree/main/..., https://github.com/owner/repo.git
+ */
+export function normalizeSourceUrl(raw: string): string {
+  let input = raw.trim();
+
+  // git@github.com:owner/repo.git → https://github.com/owner/repo
+  if (input.startsWith('git@github.com:')) {
+    input = 'https://github.com/' + input.slice('git@github.com:'.length);
+  }
+
+  // Strip trailing .git
+  input = input.replace(/\.git$/, '');
+
+  // owner/repo (no dots, no protocol, no slashes beyond the one separator)
+  if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(input)) {
+    return `https://github.com/${input}`;
+  }
+
+  // github.com/owner/repo (no protocol)
+  if (/^(www\.)?github\.com\//i.test(input)) {
+    input = 'https://' + input;
+  }
+
+  // Full URL — clean up GitHub paths (strip /tree/main, /blob/..., trailing slashes)
+  try {
+    const parsed = new URL(input);
+    if (parsed.hostname === 'github.com' || parsed.hostname === 'www.github.com') {
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        return `https://github.com/${parts[0]}/${parts[1]}`;
+      }
+    }
+  } catch {
+    // Not a valid URL — return as-is, backend will reject
+  }
+
+  return input;
+}
+
+// ─── Marketplace Source Helpers ──────────────────────────────────────
+
+/** Detect marketplace source type from URL (GitHub → git-marketplace, else url-index) */
+export function detectSourceType(url: string): MarketplaceSourceType | null {
+  const normalized = normalizeSourceUrl(url);
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname === 'github.com' || parsed.hostname === 'www.github.com') {
+      return 'git-marketplace';
+    }
+    return 'url-index';
+  } catch {
+    if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(url.trim())) {
+      return 'git-marketplace';
+    }
+    return null;
+  }
+}
+
+export const SOURCE_TYPE_LABELS: Record<MarketplaceSourceType, string> = {
+  'git-marketplace': 'GitHub Repository',
+  'url-index': 'Custom URL',
+};

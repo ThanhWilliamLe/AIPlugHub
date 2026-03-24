@@ -7,6 +7,7 @@
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
+import { assertWriteAllowed } from '../write-guard';
 
 export type CacheEntry<T> = {
   data: T;
@@ -104,12 +105,10 @@ export class MarketplaceCache {
     entry: { fetchedAt: string; stars: Record<string, number> },
   ): Promise<void> {
     const dir = join(this.basePath, 'stars');
+    const filePath = join(dir, `${hashFilename(sourceId)}.json`);
+    assertWriteAllowed(filePath);
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(
-      join(dir, `${hashFilename(sourceId)}.json`),
-      JSON.stringify(entry, null, 2),
-      'utf-8',
-    );
+    await fs.writeFile(filePath, JSON.stringify(entry, null, 2), 'utf-8');
   }
 
   /** Invalidate all star caches */
@@ -151,6 +150,7 @@ export class MarketplaceCache {
   }
 
   private async set<T>(filePath: string, data: T, etag?: string): Promise<void> {
+    assertWriteAllowed(filePath);
     await fs.mkdir(dirname(filePath), { recursive: true });
 
     const entry: CacheEntry<T> = {

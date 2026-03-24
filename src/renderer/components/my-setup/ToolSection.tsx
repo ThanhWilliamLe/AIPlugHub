@@ -114,7 +114,7 @@ function PluginGroupSection({
             ref={(el) => {
               if (el) el.indeterminate = someSelected;
             }}
-            aria-label={`Select all ${group.pluginKey} components`}
+            aria-label={`Select all ${group.pluginKey} plugins`}
             className="w-4 h-4 shrink-0 accent-[#4A7FB5] cursor-pointer"
             onChange={() => onCheckGroup?.(childIds, !allSelected)}
             onClick={(e) => e.stopPropagation()}
@@ -206,8 +206,8 @@ function PluginGroupSection({
   );
 }
 
-/** Collapsible sub-section for a project folder group (USR-03) */
-function ProjectGroupSection({
+/** Collapsible section for a project folder group (USR-03). Exported for top-level rendering. */
+export function ProjectGroupSection({
   group,
   defaultExpanded,
   selectedComponentId,
@@ -235,7 +235,7 @@ function ProjectGroupSection({
   );
 
   return (
-    <div className="ml-4 mb-1">
+    <div className="mb-1">
       {/* Project group header */}
       <div
         className={cn(
@@ -261,7 +261,7 @@ function ProjectGroupSection({
             ref={(el) => {
               if (el) el.indeterminate = someSelected;
             }}
-            aria-label={`Select all ${group.projectName} components`}
+            aria-label={`Select all ${group.projectName} plugins`}
             className="w-4 h-4 shrink-0 accent-[#4A7FB5] cursor-pointer"
             onChange={() => onCheckGroup?.(childIds, !allSelected)}
             onClick={(e) => e.stopPropagation()}
@@ -384,7 +384,7 @@ export const ToolSection = React.memo(function ToolSection({
             ref={(el) => {
               if (el) el.indeterminate = toolSomeSelected;
             }}
-            aria-label={`Select all ${meta.label} components`}
+            aria-label={`Select all ${meta.label} plugins`}
             className="w-4 h-4 shrink-0 accent-[#4A7FB5] cursor-pointer"
             onChange={() => onCheckGroup?.(toolChildIds, !toolAllSelected)}
             onClick={(e) => e.stopPropagation()}
@@ -433,25 +433,7 @@ export const ToolSection = React.memo(function ToolSection({
         </div>
       )}
 
-      {/* Project group sub-sections (USR-03) */}
-      {expanded && projectGroups && projectGroups.length > 0 && (
-        <div className="mt-1">
-          {projectGroups.map((group) => (
-            <ProjectGroupSection
-              key={group.projectPath}
-              group={group}
-              defaultExpanded={projectGroups.length <= 3}
-              selectedComponentId={selectedComponentId}
-              onSelectComponent={onSelectComponent}
-              onToggleComponent={onToggleComponent}
-              selectionMode={selectionMode}
-              selectedIds={selectedIds}
-              onCheckChange={onCheckChange}
-              onCheckGroup={onCheckGroup}
-            />
-          ))}
-        </div>
-      )}
+      {/* Note: Project groups are rendered as top-level sections in MySetupTab (UX-01) */}
 
       {/* Standalone components */}
       {expanded && !shouldVirtualize && (

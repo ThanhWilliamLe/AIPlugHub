@@ -192,7 +192,7 @@ describe('ImportWizard — config prompts details', () => {
       configValues: {},
     });
     render(<ImportWizard />);
-    expect(screen.getByText(/sensitive — will be stored in OS keychain/i)).toBeInTheDocument();
+    expect(screen.getByText(/this value is stored securely on your computer/i)).toBeInTheDocument();
   });
 
   it('Install button is disabled when required configs are not filled', () => {
@@ -298,7 +298,7 @@ describe('ImportWizard — installing progress', () => {
       showingConfigPrompts: false,
     });
     render(<ImportWizard />);
-    expect(screen.getByText(/installing components/i)).toBeInTheDocument();
+    expect(screen.getByText(/installing plugins/i)).toBeInTheDocument();
   });
 
   it('shows progress bar with component name when progress event fires', () => {
@@ -347,13 +347,19 @@ describe('ImportWizard — import results', () => {
       importing: false,
       importResult: {
         installed: [],
-        skipped: [{ type: 'mcp-server', name: 'skipped-srv', core: { transport: 'stdio' as const, command: 'x' } }],
+        skipped: [
+          {
+            component: { type: 'mcp-server', name: 'skipped-srv', core: { transport: 'stdio' as const, command: 'x' } },
+            reason: 'Identical',
+          },
+        ],
         failed: [],
       },
     });
     render(<ImportWizard />);
-    expect(screen.getByText('Skipped')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText(/1 skipped/i)).toBeInTheDocument();
+    expect(screen.getByText('skipped-srv')).toBeInTheDocument();
+    expect(screen.getByText('Identical')).toBeInTheDocument();
   });
 
   it('shows failed count and error details when items failed', () => {
@@ -369,14 +375,15 @@ describe('ImportWizard — import results', () => {
         failed: [
           {
             component: { type: 'mcp-server', name: 'fail-srv', core: { transport: 'stdio' as const, command: 'x' } },
-            error: new Error('Permission denied'),
+            error: { code: 'INSTALL_FAILED', message: 'Permission denied', userFacing: true },
           },
         ],
       },
     });
     render(<ImportWizard />);
-    expect(screen.getByText('Failed')).toBeInTheDocument();
-    expect(screen.getByText(/fail-srv: Permission denied/)).toBeInTheDocument();
+    expect(screen.getByText(/1 failed/i)).toBeInTheDocument();
+    expect(screen.getByText('fail-srv')).toBeInTheDocument();
+    expect(screen.getByText('Permission denied')).toBeInTheDocument();
   });
 
   it('Go to My Setup calls closeWizard and setActiveTab', async () => {
@@ -428,7 +435,8 @@ describe('ImportWizard — incompatible components section', () => {
       },
     });
     render(<ImportWizard />);
-    expect(screen.getByText(/incompatible \(1\)/i)).toBeInTheDocument();
+    // Filter pill + section heading both show "Incompatible (1)" — use heading role
+    expect(screen.getByRole('heading', { name: /incompatible \(1\)/i })).toBeInTheDocument();
     expect(screen.getByText('incompat-srv')).toBeInTheDocument();
     expect(screen.getByText('Tool not installed')).toBeInTheDocument();
   });

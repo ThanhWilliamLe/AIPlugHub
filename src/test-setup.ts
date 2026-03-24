@@ -79,6 +79,7 @@ const mockAiPlugHubAPI = {
   system: {
     openFileDialog: vi.fn().mockResolvedValue(null),
     showInExplorer: vi.fn().mockResolvedValue(undefined),
+    openUrl: vi.fn().mockResolvedValue(undefined),
     getAppVersion: vi.fn().mockResolvedValue('0.1.0'),
     onFileDrop: vi.fn().mockReturnValue(() => {}),
     getPathForFile: vi.fn().mockReturnValue('/tmp/test.aibundle'),

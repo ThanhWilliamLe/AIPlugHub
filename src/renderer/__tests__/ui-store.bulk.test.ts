@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUiStore } from '../stores/ui-store';
 import type { ComponentId } from '@shared/types';
-import { MAX_BULK_SELECTION } from '@shared/constants';
 
 // ---------------------------------------------------------------------------
 // Factories
@@ -123,12 +122,12 @@ describe('setSelectedIds', () => {
     expect(useUiStore.getState().selectedIds).toEqual(ids);
   });
 
-  it('caps at MAX_BULK_SELECTION (250 items -> 200)', () => {
-    const ids = Array.from({ length: 250 }, (_, i) => makeId({ name: `item-${i}` }));
+  it('accepts large selections without cap', () => {
+    const ids = Array.from({ length: 500 }, (_, i) => makeId({ name: `item-${i}` }));
 
     useUiStore.getState().setSelectedIds(ids);
 
-    expect(useUiStore.getState().selectedIds).toHaveLength(MAX_BULK_SELECTION);
+    expect(useUiStore.getState().selectedIds).toHaveLength(500);
   });
 });
 

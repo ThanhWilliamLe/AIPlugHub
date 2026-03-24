@@ -15,6 +15,7 @@ import type {
   UserPreferences,
 } from '@shared/types';
 import { AppError } from '@shared/types';
+import { componentIdKey } from '@shared/utils';
 import type { ConfigIO } from './config-io';
 import type { Logger } from './logger';
 
@@ -32,6 +33,8 @@ export interface DataStore {
   getToolInstances(): Promise<ToolInstance[]>;
   setToolInstance(instance: ToolInstance): Promise<void>;
   removeToolInstance(instanceId: string): Promise<void>;
+  /** Run a function with writes batched — saves once at the end instead of after each mutation. */
+  batch(fn: () => Promise<void>): Promise<void>;
 }
 
 // --- Schema ----------------------------------------------------------------
@@ -98,12 +101,6 @@ function runMigrations(data: DataStoreSchema, logger: Logger): DataStoreSchema {
   return current;
 }
 
-// --- Identity helpers ------------------------------------------------------
-
-function componentIdKey(id: ComponentId): string {
-  return `${id.tool}:${id.type}:${id.name}:${id.scope}`;
-}
-
 // --- Implementation --------------------------------------------------------
 
 export function createDataStore(
@@ -114,6 +111,8 @@ export function createDataStore(
   const MODULE = 'DataStore';
   let data: DataStoreSchema = defaultSchema();
   let loaded = false;
+  let batching = false;
+  let batchDirty = false;
 
   function ensureLoaded(): void {
     if (!loaded) {
@@ -122,6 +121,10 @@ export function createDataStore(
   }
 
   async function save(): Promise<void> {
+    if (batching) {
+      batchDirty = true;
+      return;
+    }
     await configIO.writeJSON(filePath, data);
   }
 
@@ -266,6 +269,25 @@ export function createDataStore(
       ensureLoaded();
       data.toolInstances = data.toolInstances.filter((t) => t.instanceId !== instanceId);
       await save();
+    },
+
+    async batch(fn: () => Promise<void>): Promise<void> {
+      if (batching) {
+        // Already batching — just run the function, outer batch owns the flush
+        await fn();
+        return;
+      }
+      batching = true;
+      batchDirty = false;
+      try {
+        await fn();
+      } finally {
+        batching = false;
+        if (batchDirty) {
+          batchDirty = false;
+          await configIO.writeJSON(filePath, data);
+        }
+      }
     },
   };
 }

@@ -98,6 +98,11 @@ function stripSensitiveEnv(core: Record<string, unknown>): Record<string, unknow
         delete env[key];
       }
     }
+    // Remove empty env object so it matches export-builder's behavior
+    // (which sets env to undefined when all vars are sensitive)
+    if (Object.keys(env).length === 0) {
+      delete clone.env;
+    }
   }
   return clone;
 }

@@ -5,7 +5,6 @@
 import { create } from 'zustand';
 import type { ToolId, ComponentType, ComponentId } from '@shared/types';
 import { componentIdKey } from '@shared/utils';
-import { MAX_BULK_SELECTION } from '@shared/constants';
 
 export type Tab = 'my-setup' | 'browse' | 'transfer';
 
@@ -135,6 +134,6 @@ export const useUiStore = create<UiStoreState>((set) => ({
           : [...state.selectedIds, id],
       };
     }),
-  setSelectedIds: (ids) => set({ selectedIds: ids.slice(0, MAX_BULK_SELECTION) }),
+  setSelectedIds: (ids) => set({ selectedIds: ids }),
   clearSelection: () => set({ selectedIds: [] }),
 }));

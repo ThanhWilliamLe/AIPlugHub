@@ -51,8 +51,8 @@ describe('ProjectFoldersSection', () => {
     await waitFor(() => {
       expect(screen.getByText('my-app')).toBeInTheDocument();
       expect(screen.getByText('other')).toBeInTheDocument();
-      expect(screen.getByText('2 components found')).toBeInTheDocument();
-      expect(screen.getByText('No components found')).toBeInTheDocument();
+      expect(screen.getByText('2 plugins found')).toBeInTheDocument();
+      expect(screen.getByText('No plugins found')).toBeInTheDocument();
     });
   });
 
@@ -72,7 +72,7 @@ describe('ProjectFoldersSection', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/add project folder/i));
+      fireEvent.click(screen.getByRole('button', { name: /add project folder/i }));
     });
 
     await waitFor(() => {
@@ -93,7 +93,7 @@ describe('ProjectFoldersSection', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/add project folder/i));
+      fireEvent.click(screen.getByRole('button', { name: /add project folder/i }));
     });
 
     expect(window.aiplughub.projects.add).not.toHaveBeenCalled();
@@ -135,7 +135,7 @@ describe('ProjectFoldersSection', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText(/add project folder/i));
+      fireEvent.click(screen.getByRole('button', { name: /add project folder/i }));
     });
 
     await waitFor(() => {
@@ -147,6 +147,6 @@ describe('ProjectFoldersSection', () => {
     vi.mocked(window.aiplughub.projects.list).mockResolvedValue([]);
     render(<ProjectFoldersSection />);
     expect(screen.getByText('Project Folders')).toBeInTheDocument();
-    expect(screen.getByText(/scan project-specific components/i)).toBeInTheDocument();
+    expect(screen.getByText(/some projects have their own plugins/i)).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-1%2C780-blue)
+![Tests](https://img.shields.io/badge/tests-1%2C797-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-public%20preview-orange)
@@ -27,6 +27,7 @@ Tired of editing JSON files to add a plugin? AI Plug Hub gives you a visual inte
 - **Import a bundle** on a new machine and get the exact same setup quickly
 - **Bulk operations** -- select multiple plugins and act on them at once
 - **Backup and restore** -- snapshot your settings before experimenting
+- **Project-scope plugins** -- manage plugins scoped to specific project folders
 
 ## Supported tools
 
@@ -69,7 +70,7 @@ Building requires Node.js 18+ and npm. The download above is all most people nee
 1. **Detect** -- On first launch, the app scans your machine for installed AI tools and finds their plugins automatically.
 2. **View** -- See everything you have installed, grouped by tool. Check details, status, and configuration at a glance.
 3. **Browse** -- Search plugin sources to find new plugins, sorted by popularity.
-4. **Install** -- Pick a plugin, pick which tool to install it for, and the app sets it up automatically.
+4. **Install** -- Pick a plugin, pick which tool and scope to install it for, and the app sets it up automatically.
 5. **Export / Import** -- Package your setup into a bundle file. Send it to a teammate, move it to another machine, or keep it as a backup.
 
 ![Browse tab with marketplace sources, popularity sort, and star counts](docs/screenshots/browse-tab.png)
@@ -95,7 +96,7 @@ Bundles are how you move plugin setups between machines and people.
 
 ## Public preview
 
-AI Plug Hub is in **public preview**. Core features are implemented and backed by 1,780+ tests, but it hasn't had wide real-world usage yet. Windows is available now; macOS and Linux are coming soon.
+AI Plug Hub is in **public preview**. Core features are implemented and tested, but it hasn't had wide real-world usage yet. Windows is available now; macOS and Linux are coming soon.
 
 This is real software you can download and run today -- not a prototype, not a waitlist. Your feedback will shape what comes next.
 
@@ -104,14 +105,6 @@ This is real software you can download and run today -- not a prototype, not a w
 The most helpful thing you can do right now is try it and report what happens.
 
 **[Open an issue](https://github.com/ThanhWilliamLe/AIPlugHub/issues)** · **[Start a discussion](https://github.com/ThanhWilliamLe/AIPlugHub/discussions)**
-
-What's most useful:
-
-- Bug reports with steps to reproduce
-- Which AI tools you use and how the detection worked (or didn't)
-- Plugins that failed to install or didn't show up
-- Anything confusing in the UI
-- What you wish it did differently
 
 <details>
 <summary><strong>Development</strong></summary>
@@ -123,7 +116,7 @@ npm run build        # Production build
 npm run dist         # Build + package Windows installer
 npm run dist:mac     # Build + package macOS .dmg
 npm run dist:linux   # Build + package Linux AppImage
-npm test             # Run tests (1780+ passing)
+npm test             # Run tests (1797 passing)
 npm run lint         # ESLint
 npm run typecheck    # TypeScript strict check
 ```

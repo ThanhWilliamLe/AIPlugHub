@@ -634,3 +634,101 @@ describe('DataStore default schema', () => {
     expect(prefs.setupComplete).toBe(false);
   });
 });
+
+// --- Batch tests -----------------------------------------------------------
+
+describe('DataStore batch', () => {
+  it('writes to disk only once for multiple mutations', async () => {
+    const configIO = makeConfigIO();
+    const store = createDataStore(dataPath, configIO, logger);
+    await store.load();
+
+    // Count how many times the file is written by checking mtime changes
+    const { stat } = await import('fs/promises');
+    const mtimeBefore = (await stat(dataPath)).mtimeMs;
+
+    await store.batch(async () => {
+      await store.setComponentMeta(testId, { tracking: 'detected' });
+      await store.setComponentMeta(
+        { ...testId, name: 'server-2' },
+        { tracking: 'detected' },
+      );
+      await store.setComponentMeta(
+        { ...testId, name: 'server-3' },
+        { tracking: 'detected' },
+      );
+      // During batch, file should not have been updated yet
+      const midBatchRaw = JSON.parse(await readFile(dataPath, 'utf-8'));
+      expect(midBatchRaw.components).toHaveLength(0);
+    });
+
+    // After batch, all three components should be persisted
+    const raw = JSON.parse(await readFile(dataPath, 'utf-8'));
+    expect(raw.components).toHaveLength(3);
+  });
+
+  it('still flushes if batch callback throws', async () => {
+    const store = makeStore();
+    await store.load();
+
+    await expect(
+      store.batch(async () => {
+        await store.setComponentMeta(testId, { tracking: 'detected' });
+        throw new Error('mid-batch failure');
+      }),
+    ).rejects.toThrow('mid-batch failure');
+
+    // The component added before the error should still be flushed
+    const raw = JSON.parse(await readFile(dataPath, 'utf-8'));
+    expect(raw.components).toHaveLength(1);
+  });
+
+  it('no-op batch does not write', async () => {
+    const store = makeStore();
+    await store.load();
+
+    const { stat } = await import('fs/promises');
+    const mtimeBefore = (await stat(dataPath)).mtimeMs;
+
+    // Small delay to ensure mtime would differ if written
+    await new Promise((r) => setTimeout(r, 50));
+
+    await store.batch(async () => {
+      // no mutations
+    });
+
+    const mtimeAfter = (await stat(dataPath)).mtimeMs;
+    expect(mtimeAfter).toBe(mtimeBefore);
+  });
+
+  it('nested batch is safe — inner batch defers to outer', async () => {
+    const store = makeStore();
+    await store.load();
+
+    await store.batch(async () => {
+      await store.setComponentMeta(testId, { tracking: 'detected' });
+
+      // Nested batch should not corrupt the outer batch
+      await store.batch(async () => {
+        await store.setComponentMeta(
+          { ...testId, name: 'inner-component' },
+          { tracking: 'detected' },
+        );
+      });
+
+      // This mutation should still be batched (not written individually)
+      await store.setComponentMeta(
+        { ...testId, name: 'after-inner' },
+        { tracking: 'detected' },
+      );
+
+      // During outer batch, nothing should be on disk yet
+      const midBatchRaw = JSON.parse(await readFile(dataPath, 'utf-8'));
+      expect(midBatchRaw.components).toHaveLength(0);
+    });
+
+    // After outer batch completes, all 3 components should be persisted
+    const raw = JSON.parse(await readFile(dataPath, 'utf-8'));
+    expect(raw.components).toHaveLength(3);
+  });
+});

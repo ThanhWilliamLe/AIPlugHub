@@ -33,6 +33,7 @@ export type WizardStoreState = {
   selectedIds: ComponentId[];
   exportOptions: ExportOptions;
   exportedJson: string | null;
+  savedFilePath: string | null;
 
   // Import state
   importStep: ImportStep;
@@ -84,7 +85,7 @@ export function buildDefaultFilename(selectedIds: ComponentId[]): string {
   const date = new Date().toISOString().slice(0, 10);
   const uniqueTools = [...new Set(selectedIds.map((id) => id.tool))].sort();
   const toolSuffix = uniqueTools.join('-');
-  const noun = count === 1 ? 'component' : 'components';
+  const noun = count === 1 ? 'plugin' : 'plugins';
   return `plughub-${count}-${noun}-${toolSuffix}-${date}`;
 }
 
@@ -148,6 +149,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     selectedIds: [],
     exportOptions: {},
     exportedJson: null,
+    savedFilePath: null,
     importStep: 1,
     bundle: null,
     conflicts: null,
@@ -169,6 +171,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         selectedIds: [],
         exportOptions: {},
         exportedJson: null,
+        savedFilePath: null,
         error: null,
       }),
 
@@ -179,6 +182,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         selectedIds: ids,
         exportOptions: {},
         exportedJson: null,
+        savedFilePath: null,
         error: null,
       }),
 
@@ -213,7 +217,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         const savedPath = await window.aiplughub.bundles.saveBundle(json, bundleName);
 
         if (savedPath) {
-          set({ exportedJson: json, exportStep: 3, loading: false });
+          set({ exportedJson: json, savedFilePath: savedPath, exportStep: 3, loading: false });
         } else {
           // User cancelled save dialog
           set({ loading: false });
@@ -348,6 +352,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         selectedIds: [],
         exportOptions: {},
         exportedJson: null,
+        savedFilePath: null,
         importStep: 1,
         bundle: null,
         conflicts: null,

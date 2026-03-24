@@ -62,7 +62,7 @@ describe('ExportWizard — step 2 review', () => {
   it('shows secret count warning when env contains sensitive keys', () => {
     setupStep2([MCP_COMPONENT]);
     render(<ExportWizard />);
-    expect(screen.getByText(/1 secret value will not be included/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 password.*\/API key.*will NOT be included for security/i)).toBeInTheDocument();
   });
 
   it('does not show secret warning when no sensitive env vars', () => {

@@ -61,7 +61,7 @@ export function BulkActionBar({
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      className="absolute bottom-4 left-4 right-4 flex items-center gap-2 px-4 py-2.5 bg-sand-text text-white rounded-xl shadow-xl animate-slide-up"
+      className="sticky bottom-4 mx-4 flex items-center gap-2 px-4 py-2.5 bg-sand-text text-white rounded-xl shadow-xl animate-slide-up z-20"
     >
       {/* Selected count */}
       <span className="text-xs font-medium mr-2 shrink-0">
@@ -106,7 +106,7 @@ export function BulkActionBar({
           type="button"
           onClick={onUpdate}
           disabled={updatableCount === 0}
-          title={updatableCount === 0 ? 'No updates available for selected components' : undefined}
+          title={updatableCount === 0 ? 'No updates available for selected plugins' : undefined}
           className={cn(
             'text-xs font-medium px-3 py-1.5 rounded-lg border border-white/15 bg-white/8 text-white hover:bg-white/15',
             updatableCount === 0 && 'opacity-50 cursor-not-allowed',

@@ -89,6 +89,14 @@ function toPortable(component: Component): PortableComponent {
   if (warnings.length > 0) portable.portabilityWarnings = warnings;
   if (component.extensions) portable.toolExtensions = { [component.id.tool]: component.extensions };
 
+  // Carry marketplace source info for import-side awareness
+  if (component.installedFrom) {
+    portable.marketplaceSource = {
+      sourceId: component.installedFrom.sourceId,
+      ref: component.installedFrom.ref,
+    };
+  }
+
   return portable;
 }
 

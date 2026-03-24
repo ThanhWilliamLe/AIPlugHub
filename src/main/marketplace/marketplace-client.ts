@@ -16,7 +16,6 @@ import type {
   UpdateCheckError,
   PluginUpdate,
   ComponentChange,
-  ComponentChangeType,
   FieldDiff,
   PortableComponent,
 } from '@shared/types';
@@ -31,8 +30,13 @@ import type { DataStore } from '../data-store';
 import type { SecretStore } from '../secret-store';
 import type { AdapterRegistry } from '../adapters/adapter-registry';
 import { withAdapterLock } from '../ipc/operation-lock';
-import { componentContentHash } from '@shared/utils';
+import { componentContentHash, isSensitiveEnvKey } from '@shared/utils';
 import { join } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { assertWriteAllowed } from '../write-guard';
+
+const execFileAsync = promisify(execFile);
 
 /** 1 hour manifest cache TTL */
 const MANIFEST_TTL_MS = 60 * 60 * 1000;
@@ -156,37 +160,105 @@ export class MarketplaceClient {
   async install(ref: MarketplaceRef, target: BrowseInstallTarget): Promise<Component> {
     const detail = await this.getDetail(ref);
 
-    if (detail.components.length === 0) {
+    // If detail has portable components (plugin.json exists), install them directly
+    if (detail.components.length > 0) {
+      let lastResult: Component | null = null;
+      for (const portable of detail.components) {
+        const result = await withAdapterLock(target.instanceId, async () => {
+          const adapter = this.registry.getAdapter(target.instanceId);
+          return adapter.install(portable, {
+            instanceId: target.instanceId,
+            scope: target.scope,
+          });
+        });
+
+        await this.dataStore.setComponentMeta(result.id, {
+          tracking: 'imported',
+          displayName: portable.description,
+          installedFrom: { sourceId: ref.sourceId, ref: ref.ref },
+          installedVersion: detail.entry.version,
+          installedHash: componentContentHash(portable),
+        });
+
+        lastResult = result;
+      }
+      return lastResult!;
+    }
+
+    // No plugin.json — delegate to Claude Code's native install command.
+    // Most plugins don't ship a plugin.json manifest; they have skills/commands/agents
+    // as .md files that Claude Code's own installer knows how to handle.
+    const adapter = this.registry.getAdapter(target.instanceId);
+    if (adapter.toolId !== 'claude-code') {
       throw new AppError(
         'INSTALL_FAILED',
-        `Plugin "${ref.ref}" has no installable components`,
-        false,
+        `Plugin "${ref.ref}" has no installable components and native install is only supported for Claude Code. [source: ${ref.sourceId}, ref: ${ref.ref}]`,
+        true,
       );
     }
 
-    // Install all components from the plugin
-    let lastResult: Component | null = null;
-    for (const portable of detail.components) {
-      const result = await withAdapterLock(target.instanceId, async () => {
-        const adapter = this.registry.getAdapter(target.instanceId);
-        return adapter.install(portable, {
-          instanceId: target.instanceId,
-          scope: target.scope,
-        });
-      });
+    // Build the plugin specifier: name@marketplace
+    const pluginSpec = `${ref.ref}@${ref.sourceId}`;
+    this.logger.info(
+      'Marketplace',
+      `No plugin.json — delegating to: claude plugins install ${pluginSpec}`,
+    );
 
-      await this.dataStore.setComponentMeta(result.id, {
-        tracking: 'imported',
-        displayName: portable.description,
-        installedFrom: { sourceId: ref.sourceId, ref: ref.ref },
-        installedVersion: detail.entry.version,
-        installedHash: componentContentHash(portable),
+    try {
+      // Build a filtered env that strips sensitive variables
+      const safeEnv: Record<string, string> = {};
+      const SAFE_ENV_KEYS = new Set([
+        'PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+        'TEMP', 'TMP', 'SystemRoot', 'COMSPEC', 'SHELL',
+        'LANG', 'LC_ALL', 'TERM', 'NODE_ENV',
+      ]);
+      for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined && (SAFE_ENV_KEYS.has(key) || !isSensitiveEnvKey(key))) {
+          safeEnv[key] = value;
+        }
+      }
+      const { stdout, stderr } = await execFileAsync('claude', ['plugins', 'install', pluginSpec], {
+        timeout: 60_000,
+        env: safeEnv,
       });
-
-      lastResult = result;
+      this.logger.info('Marketplace', `Native install stdout: ${stdout.trim()}`);
+      if (stderr.trim()) {
+        this.logger.warn('Marketplace', `Native install stderr: ${stderr.trim()}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new AppError(
+        'INSTALL_FAILED',
+        `Native install failed for "${pluginSpec}": ${message}. Try running "claude plugins install ${pluginSpec}" manually in your terminal.`,
+        true,
+      );
     }
 
-    return lastResult!;
+    // Re-scan to pick up the newly installed plugin
+    const components = await adapter.scan();
+    const installed = components.find(
+      (c) =>
+        c.extensions?.pluginKey === pluginSpec ||
+        (c.extensions?.pluginName === ref.ref && c.extensions?.marketplace === ref.sourceId),
+    );
+
+    if (installed) {
+      await this.dataStore.setComponentMeta(installed.id, {
+        tracking: 'imported',
+        installedFrom: { sourceId: ref.sourceId, ref: ref.ref },
+        installedVersion: detail.entry.version,
+      });
+      return installed;
+    }
+
+    // Plugin installed but we can't find it — still a success, just return a placeholder
+    return {
+      id: { tool: 'claude-code', type: 'unknown', name: ref.ref, scope: 'plugin' },
+      core: { rawConfig: undefined, rawTypeName: 'plugin' },
+      tracking: 'imported',
+      installedFrom: { sourceId: ref.sourceId, ref: ref.ref },
+      version: detail.entry.version,
+    };
   }
 
   /** Invalidate all caches and re-fetch */
@@ -324,11 +396,6 @@ export class MarketplaceClient {
       try {
         // Install/update each upstream component
         for (const portable of detail.components) {
-          // Snapshot current state before overwriting (for rollback)
-          const existingMeta = pluginMetas.find(
-            (m) => m.id.name === portable.name && m.id.type === portable.type,
-          );
-
           const result = await withAdapterLock(instance.instanceId, async () => {
             const adapter = this.registry.getAdapter(instance.instanceId);
             return adapter.install(portable, {
@@ -634,14 +701,67 @@ export class MarketplaceClient {
 
     const config = this.sourceConfigs.find((s) => s.sourceId === sourceId);
     if (!config) throw new AppError('SOURCE_NOT_FOUND', `Source "${sourceId}" not found`, true);
+
+    // Built-in sources (from Claude Code's known_marketplaces.json) — remove from the file
     if (config.isBuiltIn) {
-      throw new AppError('VALIDATION_ERROR', 'Cannot remove built-in source', false);
+      await this.removeNativeMarketplaceSource(sourceId);
+    } else {
+      // Custom sources persist in DataStore preferences
+      await this.saveSourceConfigs();
     }
 
     this.sourceConfigs = this.sourceConfigs.filter((s) => s.sourceId !== sourceId);
     this.sources.delete(sourceId);
-    await this.saveSourceConfigs();
+
     await this.cache.invalidateSource(sourceId);
+  }
+
+  /** Remove a native marketplace entry from Claude Code's config files */
+  private async removeNativeMarketplaceSource(sourceId: string): Promise<void> {
+    if (!this.claudeRootPath) return;
+
+    const fs = await import('fs/promises');
+    let removed = false;
+
+    // Try known_marketplaces.json first
+    try {
+      const knownPath = join(this.claudeRootPath, 'plugins', 'known_marketplaces.json');
+      const content = await fs.readFile(knownPath, 'utf-8');
+      const data = JSON.parse(content) as Record<string, unknown>;
+      if (sourceId in data) {
+        delete data[sourceId];
+        assertWriteAllowed(knownPath);
+        await fs.writeFile(knownPath, JSON.stringify(data, null, 2), 'utf-8');
+        this.logger.info('Marketplace', `Removed "${sourceId}" from known_marketplaces.json`);
+        removed = true;
+      }
+    } catch {
+      // File may not exist — continue to settings.json
+    }
+
+    // Also try settings.json → extraKnownMarketplaces
+    try {
+      const settingsPath = join(this.claudeRootPath, 'settings.json');
+      const content = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(content) as Record<string, unknown>;
+      const extra = settings.extraKnownMarketplaces as Record<string, unknown> | undefined;
+      if (extra && sourceId in extra) {
+        delete extra[sourceId];
+        if (Object.keys(extra).length === 0) {
+          delete settings.extraKnownMarketplaces;
+        }
+        assertWriteAllowed(settingsPath);
+        await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+        this.logger.info('Marketplace', `Removed "${sourceId}" from settings.json extraKnownMarketplaces`);
+        removed = true;
+      }
+    } catch {
+      // settings.json may not exist or be unreadable
+    }
+
+    if (!removed) {
+      this.logger.warn('Marketplace', `Source "${sourceId}" not found in any Claude Code config file`);
+    }
   }
 
   // ─── Internal ──────────────────────────────────────────────────────
@@ -733,36 +853,65 @@ export class MarketplaceClient {
     this.starEnricher = new StarEnricher(this.cache, githubToken ?? null);
   }
 
+  /** Convert a marketplace entries record into MarketplaceSourceConfig[] */
+  private marketplaceEntriesToSources(
+    data: Record<string, KnownMarketplace>,
+  ): MarketplaceSourceConfig[] {
+    const sources: MarketplaceSourceConfig[] = [];
+    for (const [id, entry] of Object.entries(data)) {
+      if (!entry?.source?.repo || entry.source.source !== 'github') continue;
+      sources.push({
+        sourceId: id,
+        sourceType: 'git-marketplace',
+        url: `https://github.com/${entry.source.repo}`,
+        displayName: id
+          .split('-')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' '),
+        isBuiltIn: true,
+      });
+    }
+    return sources;
+  }
+
+  /**
+   * Load native marketplace sources from Claude Code's config files.
+   * Reads both known_marketplaces.json and settings.json (extraKnownMarketplaces).
+   * settings.json entries override known_marketplaces.json for the same ID.
+   */
   private async loadNativeMarketplaceSources(): Promise<MarketplaceSourceConfig[]> {
     if (!this.claudeRootPath) return [];
 
-    const filePath = join(this.claudeRootPath, 'plugins', 'known_marketplaces.json');
+    const fs = await import('fs/promises');
+    const merged = new Map<string, MarketplaceSourceConfig>();
 
+    // 1. Read known_marketplaces.json (plugin-installed marketplaces)
     try {
-      const fs = await import('fs/promises');
-      const content = await fs.readFile(filePath, 'utf-8');
+      const knownPath = join(this.claudeRootPath, 'plugins', 'known_marketplaces.json');
+      const content = await fs.readFile(knownPath, 'utf-8');
       const data = JSON.parse(content) as Record<string, KnownMarketplace>;
-
-      const sources: MarketplaceSourceConfig[] = [];
-      for (const [id, entry] of Object.entries(data)) {
-        if (!entry?.source?.repo || entry.source.source !== 'github') continue;
-
-        sources.push({
-          sourceId: `native-${id}`,
-          sourceType: 'git-marketplace',
-          url: `https://github.com/${entry.source.repo}`,
-          displayName: id
-            .split('-')
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' '),
-          isBuiltIn: true, // native sources can't be removed in AI Plug Hub
-        });
+      for (const src of this.marketplaceEntriesToSources(data)) {
+        merged.set(src.sourceId, src);
       }
-      return sources;
     } catch {
-      this.logger.warn('Marketplace', `Could not read known_marketplaces.json from ${filePath}`);
-      return [];
+      this.logger.warn('Marketplace', 'Could not read known_marketplaces.json');
     }
+
+    // 2. Read settings.json → extraKnownMarketplaces (user-added marketplaces)
+    try {
+      const settingsPath = join(this.claudeRootPath, 'settings.json');
+      const content = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(content) as { extraKnownMarketplaces?: Record<string, KnownMarketplace> };
+      if (settings.extraKnownMarketplaces) {
+        for (const src of this.marketplaceEntriesToSources(settings.extraKnownMarketplaces)) {
+          merged.set(src.sourceId, src); // Override known_marketplaces.json entry if same ID
+        }
+      }
+    } catch {
+      this.logger.warn('Marketplace', 'Could not read extraKnownMarketplaces from settings.json');
+    }
+
+    return Array.from(merged.values());
   }
 
   private async loadSourceConfigs(): Promise<MarketplaceSourceConfig[]> {

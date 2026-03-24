@@ -81,9 +81,10 @@ describe('BrowseTab', () => {
   it('loads and displays plugin entries', async () => {
     render(<BrowseTab />);
     await waitFor(() => {
-      expect(screen.getByText('sqlite-mcp')).toBeInTheDocument();
-      expect(screen.getByText('code-review-skill')).toBeInTheDocument();
-      expect(screen.getByText('desktop-postgres')).toBeInTheDocument();
+      // Entries may appear in both the Featured section and the main list
+      expect(screen.getAllByText('sqlite-mcp').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('code-review-skill').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('desktop-postgres').length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -105,7 +106,7 @@ describe('BrowseTab', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Partial failure')).toBeInTheDocument();
-      expect(screen.getByText('sqlite-mcp')).toBeInTheDocument();
+      expect(screen.getAllByText('sqlite-mcp').length).toBeGreaterThanOrEqual(1);
     });
   });
 

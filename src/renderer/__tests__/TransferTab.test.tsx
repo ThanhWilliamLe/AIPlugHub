@@ -67,13 +67,13 @@ describe('ExportWizard', () => {
 
   it('renders step 1 with search input and component list', () => {
     render(<ExportWizard />);
-    expect(screen.getByLabelText(/search components for export/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/search plugins for export/i)).toBeInTheDocument();
     expect(screen.getByText('test-server')).toBeInTheDocument();
   });
 
   it('shows "0 of N selected" counter', () => {
     render(<ExportWizard />);
-    expect(screen.getByText('0 of 1 selected')).toBeInTheDocument();
+    expect(screen.getByText('0 of 1 plugins selected')).toBeInTheDocument();
   });
 
   it('Next button is disabled when no components selected', () => {
@@ -115,11 +115,11 @@ describe('ExportWizard', () => {
     render(<ExportWizard />);
 
     // Search to show only "alpha"
-    const searchInput = screen.getByLabelText(/search components for export/i);
+    const searchInput = screen.getByLabelText(/search plugins for export/i);
     await user.type(searchInput, 'alpha');
 
-    // Click "Deselect all" — should only deselect alpha, keep beta
-    const deselectBtn = screen.getByText('Deselect all');
+    // Click "Deselect all visible" — should only deselect alpha, keep beta
+    const deselectBtn = screen.getByText('Deselect all visible');
     await user.click(deselectBtn);
 
     // beta-server should still be selected in the store
@@ -136,7 +136,7 @@ describe('ExportWizard', () => {
       ],
     });
     render(<ExportWizard />);
-    expect(screen.getByText(/1 component.* will be exported/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 plugin.* will be exported/i)).toBeInTheDocument();
     expect(screen.getByText('MCP Server')).toBeInTheDocument();
   });
 
@@ -184,7 +184,8 @@ describe('ImportWizard', () => {
       },
     });
     render(<ImportWizard />);
-    expect(screen.getByText(/new \(1\)/i)).toBeInTheDocument();
+    // Filter pill + section header both show "New (1)" — check section heading specifically
+    expect(screen.getByRole('heading', { name: /new \(1\)/i })).toBeInTheDocument();
     expect(screen.getByText('new-server')).toBeInTheDocument();
   });
 
@@ -233,7 +234,8 @@ describe('ImportWizard', () => {
       ],
     });
     render(<ImportWizard />);
-    expect(screen.getByText(/conflicts \(1\)/i)).toBeInTheDocument();
+    // Filter pill + section header both show "Needs review (1)" — check section heading specifically
+    expect(screen.getByRole('heading', { name: /needs review \(1\)/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/resolution for conflict-server/i)).toBeInTheDocument();
   });
 
@@ -286,7 +288,7 @@ describe('ImportWizard', () => {
     });
     render(<ImportWizard />);
     expect(
-      screen.getByText(/some components require configuration/i),
+      screen.getByText(/some plugins need settings/i),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/value for API_KEY/i)).toBeInTheDocument();
   });
@@ -322,8 +324,8 @@ describe('ImportWizard', () => {
     });
     render(<ImportWizard />);
     expect(screen.getByText('Import complete')).toBeInTheDocument();
-    expect(screen.getByText('Installed')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText(/1 installed/i)).toBeInTheDocument();
+    expect(screen.getByText('installed-srv')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /go to my setup/i })).toBeInTheDocument();
   });
 });

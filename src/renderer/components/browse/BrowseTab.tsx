@@ -4,7 +4,7 @@
  * Source: 5A-specs/browse-tab-spec.md §4
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useBrowseStore, useFilteredEntries } from '@renderer/stores/browse-store';
 import type { MarketplaceRef } from '@shared/types';
 import { BrowseSearchBar } from './BrowseSearchBar';
@@ -12,6 +12,7 @@ import { BrowseFilterPills } from './BrowseFilterPills';
 import { BrowseResultCard } from './BrowseResultCard';
 import { BrowseDetailPanel } from './BrowseDetailPanel';
 import { PopularSection } from './PopularSection';
+import { MarketplaceSourcesModal } from './MarketplaceSourcesModal';
 import { EmptyState } from '@renderer/components/shared/EmptyState';
 import { Button } from '@renderer/components/ui/button';
 import type { BrowseSortBy } from '@renderer/stores/browse-store';
@@ -40,16 +41,13 @@ export function BrowseTab() {
 
   const toolFilters = useBrowseStore((s) => s.toolFilters);
   const typeFilters = useBrowseStore((s) => s.typeFilters);
-  const sourceFilters = useBrowseStore((s) => s.sourceFilters);
+
+  const [showSourcesModal, setShowSourcesModal] = useState(false);
 
   const filteredEntries = useFilteredEntries();
   const initialized = useRef(false);
 
-  const showPopular =
-    !searchQuery &&
-    toolFilters.length === 0 &&
-    typeFilters.length === 0 &&
-    sourceFilters.length === 0;
+  const showPopular = !searchQuery;
 
   // Load entries on first mount; close detail panel on unmount (tab switch)
   useEffect(() => {
@@ -75,53 +73,90 @@ export function BrowseTab() {
     [selectedRef, openDetail],
   );
 
+  // The modal must render in all states (including empty/error) so users can manage sources
+  const sourcesModal = (
+    <MarketplaceSourcesModal
+      open={showSourcesModal}
+      onClose={() => setShowSourcesModal(false)}
+      onSourcesChanged={refresh}
+    />
+  );
+
   // Loading state
   if (isLoading && entries.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-sand-secondary animate-pulse">Loading marketplace...</p>
-      </div>
+      <>
+        <div className="flex items-center justify-center h-full">
+          <p className="text-sm text-sand-secondary animate-pulse">Loading marketplace...</p>
+        </div>
+        {sourcesModal}
+      </>
     );
   }
 
   // Error with no cached data
   if (error && entries.length === 0) {
     return (
-      <EmptyState
-        icon="\u{1F4E1}"
-        title="Couldn't reach marketplace sources"
-        description="Check your internet connection and try again."
-        action={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                clearError();
-                loadEntries();
-              }}
-            >
-              Retry
-            </Button>
-          </div>
-        }
-      />
+      <>
+        <EmptyState
+          icon="\u{1F4E1}"
+          title="Couldn't reach marketplace sources"
+          description={error}
+          action={
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    clearError();
+                    loadEntries();
+                  }}
+                >
+                  Retry
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSourcesModal(true)}
+                >
+                  Manage Sources
+                </Button>
+              </div>
+              <p className="text-xs text-sand-muted select-all max-w-md text-center">{error}</p>
+            </div>
+          }
+        />
+        {sourcesModal}
+      </>
     );
   }
 
   // No entries (but sources fetched successfully)
   if (!isLoading && entries.length === 0 && !error) {
     return (
-      <EmptyState
-        icon="\u{1F4E6}"
-        title="No plugins available"
-        description="No plugins available from your configured sources. This is unusual — try refreshing or adding another source."
-        action={
-          <Button variant="outline" size="sm" onClick={refresh}>
-            Refresh
-          </Button>
-        }
-      />
+      <>
+        <EmptyState
+          icon="\u{1F4E6}"
+          title="No plugins available"
+          description="No plugins available from your configured sources. This is unusual — try refreshing or adding another source."
+          action={
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={refresh}>
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSourcesModal(true)}
+              >
+                Manage Sources
+              </Button>
+            </div>
+          }
+        />
+        {sourcesModal}
+      </>
     );
   }
 
@@ -172,6 +207,17 @@ export function BrowseTab() {
               </option>
             ))}
           </select>
+
+          {/* Sources */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSourcesModal(true)}
+            aria-label="Manage marketplace sources"
+            title="Manage marketplace sources"
+          >
+            Sources
+          </Button>
 
           {/* Refresh */}
           <Button
@@ -224,7 +270,7 @@ export function BrowseTab() {
               <span className="font-medium text-sand-text">New to plugins?</span> Start with the
               popular ones below, or search for something specific.
             </div>
-            <PopularSection entries={entries} onSelect={(ref) => openDetail(ref)} />
+            <PopularSection entries={entries} onSelect={handleSelectEntry} />
           </>
         )}
 
@@ -242,6 +288,9 @@ export function BrowseTab() {
 
       {/* Detail panel */}
       <BrowseDetailPanel />
+
+      {/* Marketplace sources modal */}
+      {sourcesModal}
     </div>
   );
 }

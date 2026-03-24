@@ -43,6 +43,8 @@ export type PortableComponent = {
   toolExtensions?: Partial<Record<ToolId, unknown>>;
   requiredConfig?: ConfigRequirement[];
   portabilityWarnings?: string[];
+  /** Marketplace source reference — set when component was installed from marketplace */
+  marketplaceSource?: { sourceId: string; ref: string };
 };
 
 export type PortablePlugin = {

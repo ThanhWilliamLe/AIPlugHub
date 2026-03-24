@@ -36,6 +36,7 @@ import {
 import { registerIpcHandlers } from './ipc';
 import { MarketplaceClient } from './marketplace/marketplace-client';
 import { BackupManager } from './backup';
+import { activateWriteGuard } from './write-guard';
 import type { ScanProgressEvent } from '@shared/types';
 
 const logger = createLogger();
@@ -65,6 +66,11 @@ function getMainWindow(): BrowserWindow | null {
 }
 
 function createWindow(): BrowserWindow {
+  // Resolve icon path — in dev it's in build/, in production it's in resources/
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png');
+
   const win = new BrowserWindow({
     width: 1024,
     height: 700,
@@ -72,6 +78,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     title: 'AI Plug Hub',
+    icon: iconPath,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -125,8 +132,8 @@ function applyCSP(): void {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
-            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+            ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
         ],
       },
     });
@@ -136,6 +143,13 @@ function applyCSP(): void {
 // ─── Boot Sequence ──────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  // Activate write guard for fixture-mode live testing (blocks writes outside fixture dir)
+  const writeGuardDir = process.env.AIPLUGHUB_WRITE_GUARD;
+  if (writeGuardDir) {
+    activateWriteGuard(writeGuardDir);
+    logger.info(MODULE, `Write guard active — writes restricted to: ${writeGuardDir}`);
+  }
+
   logger.info(MODULE, 'Starting boot sequence');
   const dataDir = getDataDir();
 
@@ -257,89 +271,92 @@ async function boot(): Promise<void> {
       `Auto-scan: firstRun=${isFirstRun}, rescanOnLaunch=${preferences.rescanOnLaunch}`,
     );
 
-    try {
-      const detectionResults = await registry.detectAll();
-      logger.info(MODULE, `Detected ${detectionResults.length} tool instance(s)`);
+    // Batch all DataStore writes during scan — one disk write at the end instead of per-component
+    await dataStore.batch(async () => {
+      try {
+        const detectionResults = await registry.detectAll();
+        logger.info(MODULE, `Detected ${detectionResults.length} tool instance(s)`);
 
-      // Reconcile detected tools with DataStore
-      for (const result of detectionResults) {
-        if (result.detected) {
-          await dataStore.setToolInstance({
-            instanceId: result.instanceId,
-            toolId: result.toolId,
-            path: result.path,
-            name: result.instanceId, // Will be formatted by UI
-            isDefault: true,
-          });
+        // Reconcile detected tools with DataStore
+        for (const result of detectionResults) {
+          if (result.detected) {
+            await dataStore.setToolInstance({
+              instanceId: result.instanceId,
+              toolId: result.toolId,
+              path: result.path,
+              name: result.instanceId, // Will be formatted by UI
+              isDefault: true,
+            });
+          }
         }
-      }
 
-      // Scan all adapters with progress events
-      for (const adapter of registry.getAllAdapters()) {
-        const progressBase: ScanProgressEvent = {
-          instanceId: adapter.instanceId,
-          toolId: adapter.toolId,
-          status: 'scanning',
-        };
-        mainWindow?.webContents.send('progress:scan', progressBase);
+        // Scan all adapters with progress events
+        for (const adapter of registry.getAllAdapters()) {
+          const progressBase: ScanProgressEvent = {
+            instanceId: adapter.instanceId,
+            toolId: adapter.toolId,
+            status: 'scanning',
+          };
+          mainWindow?.webContents.send('progress:scan', progressBase);
 
-        try {
-          const components = await adapter.scan();
-          logger.info(MODULE, `Scanned ${adapter.instanceId}: ${components.length} component(s)`);
+          try {
+            const components = await adapter.scan();
+            logger.info(MODULE, `Scanned ${adapter.instanceId}: ${components.length} component(s)`);
 
-          mainWindow?.webContents.send('progress:scan', {
-            ...progressBase,
-            status: 'complete',
-            componentCount: components.length,
-          } satisfies ScanProgressEvent);
+            mainWindow?.webContents.send('progress:scan', {
+              ...progressBase,
+              status: 'complete',
+              componentCount: components.length,
+            } satisfies ScanProgressEvent);
 
-          // Reconcile: filesystem scan is authoritative (system-design.md §4)
-          // 1. Add new components found on disk as 'detected'
-          // 2. Remove stale DataStore entries no longer on disk
-          const storedComponents = await dataStore.getComponents();
-          for (const comp of components) {
-            const existing = storedComponents.find(
-              (c) =>
-                c.id.tool === comp.id.tool &&
-                c.id.type === comp.id.type &&
-                c.id.name === comp.id.name &&
-                c.id.scope === comp.id.scope,
+            // Reconcile: filesystem scan is authoritative (system-design.md §4)
+            // 1. Add new components found on disk as 'detected'
+            // 2. Remove stale DataStore entries no longer on disk
+            const storedComponents = await dataStore.getComponents();
+            for (const comp of components) {
+              const existing = storedComponents.find(
+                (c) =>
+                  c.id.tool === comp.id.tool &&
+                  c.id.type === comp.id.type &&
+                  c.id.name === comp.id.name &&
+                  c.id.scope === comp.id.scope,
+              );
+              if (!existing) {
+                await dataStore.setComponentMeta(comp.id, { tracking: 'detected' });
+              }
+            }
+
+            // Remove stale entries for this adapter's tool that weren't in scan results
+            const scannedKeys = new Set(
+              components.map((c) => `${c.id.tool}:${c.id.type}:${c.id.name}:${c.id.scope}`),
             );
-            if (!existing) {
-              await dataStore.setComponentMeta(comp.id, { tracking: 'detected' });
+            for (const stored of storedComponents) {
+              if (stored.id.tool !== adapter.toolId) continue;
+              const key = `${stored.id.tool}:${stored.id.type}:${stored.id.name}:${stored.id.scope}`;
+              if (!scannedKeys.has(key)) {
+                logger.info(MODULE, `Removing stale component: ${key}`);
+                await dataStore.removeComponentMeta(stored.id);
+              }
             }
+          } catch (err) {
+            logger.error(MODULE, `Scan failed for ${adapter.instanceId}`, err as Error);
+            mainWindow?.webContents.send('progress:scan', {
+              ...progressBase,
+              status: 'error',
+              error: err instanceof Error ? err.message : String(err),
+            } satisfies ScanProgressEvent);
           }
-
-          // Remove stale entries for this adapter's tool that weren't in scan results
-          const scannedKeys = new Set(
-            components.map((c) => `${c.id.tool}:${c.id.type}:${c.id.name}:${c.id.scope}`),
-          );
-          for (const stored of storedComponents) {
-            if (stored.id.tool !== adapter.toolId) continue;
-            const key = `${stored.id.tool}:${stored.id.type}:${stored.id.name}:${stored.id.scope}`;
-            if (!scannedKeys.has(key)) {
-              logger.info(MODULE, `Removing stale component: ${key}`);
-              await dataStore.removeComponentMeta(stored.id);
-            }
-          }
-        } catch (err) {
-          logger.error(MODULE, `Scan failed for ${adapter.instanceId}`, err as Error);
-          mainWindow?.webContents.send('progress:scan', {
-            ...progressBase,
-            status: 'error',
-            error: err instanceof Error ? err.message : String(err),
-          } satisfies ScanProgressEvent);
         }
+      } catch (err) {
+        logger.error(MODULE, 'Auto-detect/scan failed', err as Error);
       }
-    } catch (err) {
-      logger.error(MODULE, 'Auto-detect/scan failed', err as Error);
-    }
 
-    // Mark setup as complete so subsequent launches respect rescanOnLaunch preference
-    if (isFirstRun) {
-      await dataStore.setPreferences({ setupComplete: true });
-      logger.info(MODULE, 'First run complete, setupComplete set to true');
-    }
+      // Mark setup as complete so subsequent launches respect rescanOnLaunch preference
+      if (isFirstRun) {
+        await dataStore.setPreferences({ setupComplete: true });
+        logger.info(MODULE, 'First run complete, setupComplete set to true');
+      }
+    });
   }
 
   // 7. Backfill update tracking for pre-USR-06 installs — non-blocking

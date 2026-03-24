@@ -17,5 +17,3 @@ export {
   AUTO_BACKUP_LABEL,
 } from './backup';
 export type { CachePatternEntry } from './backup';
-
-export { MAX_BULK_SELECTION } from './bulk';

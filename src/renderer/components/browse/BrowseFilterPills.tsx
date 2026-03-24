@@ -8,10 +8,9 @@ import { TOOL_META, COMPONENT_TYPE_META } from '@shared/constants';
 import { useBrowseStore, useBrowseToolCounts, useBrowseTypeCounts } from '@renderer/stores/browse-store';
 import { cn } from '@renderer/lib/utils';
 
-/** Format a sourceId for display (strip 'native-' prefix, title-case words) */
+/** Format a sourceId for display (title-case words) */
 function formatSourceName(sourceId: string): string {
-  const name = sourceId.replace(/^native-/, '');
-  return name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return sourceId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 /** Compute relative luminance and choose white or dark text for WCAG contrast */

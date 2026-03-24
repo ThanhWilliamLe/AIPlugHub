@@ -31,7 +31,11 @@ export type ErrorCode =
   | 'BACKUP_IN_PROGRESS'
   | 'RESTORE_FAILED'
   | 'RESTORE_ROLLBACK_FAILED'
-  | 'BACKUP_NOT_FOUND';
+  | 'BACKUP_NOT_FOUND'
+  | 'NOT_FOUND'
+  | 'DUPLICATE'
+  | 'LIMIT_EXCEEDED'
+  | 'UPDATE_FAILED';
 
 export class AppError extends Error {
   constructor(

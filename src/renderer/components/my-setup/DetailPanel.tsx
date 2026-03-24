@@ -8,6 +8,7 @@ import type { Component, ComponentId } from '@shared/types';
 import { isMcpServer, isSkill, isCommand, isHook, isAgent, isPrompt } from '@shared/types';
 import { TOOL_META } from '@shared/constants';
 import { useToolStore } from '@renderer/stores/tool-store';
+import { useToastStore } from '@renderer/stores/toast-store';
 import { useUiStore } from '@renderer/stores/ui-store';
 import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { Button } from '@renderer/components/ui/button';
@@ -466,13 +467,31 @@ export function DetailPanel({ component, onClose, onToggle, onUninstall }: Detai
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => navigator.clipboard.writeText(configPath).catch(() => {})}
+                  onClick={() =>
+                    navigator.clipboard
+                      .writeText(configPath)
+                      .then(() =>
+                        useToastStore
+                          .getState()
+                          .addToast({ message: 'Path copied', type: 'success' }),
+                      )
+                      .catch((err) =>
+                        useToastStore.getState().addToast({
+                          message: `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+                          type: 'error',
+                        }),
+                      )
+                  }
                   title="Copy config path to clipboard"
                 >
                   Copy path
                 </Button>
               )}
-              <Button variant="destructive" size="sm" onClick={() => onUninstall(id)}>
+              <Button
+                size="sm"
+                className="bg-accent-destructive text-white hover:bg-accent-destructive/90"
+                onClick={() => onUninstall(id)}
+              >
                 Uninstall
               </Button>
             </div>

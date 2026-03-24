@@ -526,7 +526,6 @@ export function createClaudeCodeAdapter(
               name: `${pluginKey}/${skillName}`,
               scope: 'plugin',
             },
-            enabled: isEnabled,
             core,
             extensions: makeExtensions(),
             configPath: skillMd,
@@ -560,7 +559,6 @@ export function createClaudeCodeAdapter(
 
           components.push({
             id: { tool: TOOL_ID, type: 'command', name: `${pluginKey}/${name}`, scope: 'plugin' },
-            enabled: isEnabled,
             core,
             extensions: makeExtensions(),
             configPath: filePath,
@@ -599,7 +597,6 @@ export function createClaudeCodeAdapter(
 
           components.push({
             id: { tool: TOOL_ID, type: 'agent', name: `${pluginKey}/${name}`, scope: 'plugin' },
-            enabled: isEnabled,
             core,
             extensions: makeExtensions(),
             configPath: filePath,
@@ -666,7 +663,6 @@ export function createClaudeCodeAdapter(
             // No scannable sub-components — create a placeholder
             components.push({
               id: { tool: TOOL_ID, type: 'unknown', name: pluginKey, scope: 'plugin' },
-              enabled: isEnabled,
               core: { rawConfig: entry, rawTypeName: 'plugin' },
               extensions: {
                 pluginKey,
@@ -841,7 +837,9 @@ export function createClaudeCodeAdapter(
   // -- Uninstall sub-routines --
 
   async function uninstallMcpServer(id: ComponentId): Promise<void> {
-    const mcpPath = mcpConfigPath();
+    const mcpPath = id.projectPath
+      ? join(id.projectPath, '.claude.json')
+      : mcpConfigPath();
     if (!(await configIO.exists(mcpPath))) {
       throw new AppError('COMPONENT_NOT_FOUND', `MCP config not found: ${mcpPath}`, true);
     }
@@ -858,10 +856,23 @@ export function createClaudeCodeAdapter(
   async function uninstallFileComponent(id: ComponentId): Promise<void> {
     validateName(id.name);
 
+    // Resolve base directories — project-scoped components live under projectPath
+    const baseSkillsDir = id.projectPath
+      ? join(id.projectPath, '.claude', 'skills')
+      : skillsDir();
+    const baseCmdsDir = id.projectPath
+      ? join(id.projectPath, '.claude', 'commands')
+      : commandsDir();
+    const baseAgentsDir = id.projectPath
+      ? join(id.projectPath, '.claude', 'agents')
+      : agentsDir();
+    // For project scope, guard against paths outside the project root
+    const guardPath = id.projectPath ?? rootPath;
+
     switch (id.type) {
       case 'skill': {
-        const dir = join(skillsDir(), id.name);
-        assertPathWithin(dir, rootPath);
+        const dir = join(baseSkillsDir, id.name);
+        assertPathWithin(dir, guardPath);
         const filePath = join(dir, 'SKILL.md');
         if (!(await configIO.exists(filePath))) {
           throw new AppError('COMPONENT_NOT_FOUND', `Skill "${id.name}" not found`, true);
@@ -872,8 +883,8 @@ export function createClaudeCodeAdapter(
         return;
       }
       case 'command': {
-        const filePath = join(commandsDir(), `${id.name}.md`);
-        assertPathWithin(filePath, rootPath);
+        const filePath = join(baseCmdsDir, `${id.name}.md`);
+        assertPathWithin(filePath, guardPath);
         if (!(await configIO.exists(filePath))) {
           throw new AppError('COMPONENT_NOT_FOUND', `Command "${id.name}" not found`, true);
         }
@@ -883,8 +894,8 @@ export function createClaudeCodeAdapter(
         return;
       }
       case 'agent': {
-        const filePath = join(agentsDir(), `${id.name}.md`);
-        assertPathWithin(filePath, rootPath);
+        const filePath = join(baseAgentsDir, `${id.name}.md`);
+        assertPathWithin(filePath, guardPath);
         if (!(await configIO.exists(filePath))) {
           throw new AppError('COMPONENT_NOT_FOUND', `Agent "${id.name}" not found`, true);
         }
@@ -899,7 +910,9 @@ export function createClaudeCodeAdapter(
   }
 
   async function uninstallHook(id: ComponentId): Promise<void> {
-    const path = settingsPath();
+    const path = id.projectPath
+      ? join(id.projectPath, '.claude', 'settings.json')
+      : settingsPath();
     if (!(await configIO.exists(path))) {
       throw new AppError('COMPONENT_NOT_FOUND', 'Settings file not found', true);
     }

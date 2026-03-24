@@ -785,20 +785,20 @@ describe('confirmConfigs', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildDefaultFilename', () => {
-  it('uses singular "component" when count is 1', () => {
+  it('uses singular "plugin" when count is 1', () => {
     const ids = [makeId({ tool: 'claude-code' })];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-1-component-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-1-plugin-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('uses plural "components" when count > 1', () => {
+  it('uses plural "plugins" when count > 1', () => {
     const ids = [
       makeId({ tool: 'claude-code', name: 'a' }),
       makeId({ tool: 'claude-code', name: 'b' }),
       makeId({ tool: 'claude-code', name: 'c' }),
     ];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-3-components-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-3-plugins-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
   it('includes multiple tool names sorted alphabetically', () => {
@@ -809,7 +809,7 @@ describe('buildDefaultFilename', () => {
     ];
     const result = buildDefaultFilename(ids);
     expect(result).toMatch(
-      /^plughub-3-components-claude-code-claude-desktop-gemini-cli-\d{4}-\d{2}-\d{2}$/,
+      /^plughub-3-plugins-claude-code-claude-desktop-gemini-cli-\d{4}-\d{2}-\d{2}$/,
     );
   });
 
@@ -819,7 +819,7 @@ describe('buildDefaultFilename', () => {
       makeId({ tool: 'claude-code', name: 'b' }),
     ];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-2-components-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-2-plugins-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
   it('includes today\'s date in YYYY-MM-DD format', () => {
@@ -829,16 +829,16 @@ describe('buildDefaultFilename', () => {
     expect(result).toContain(today);
   });
 
-  it('produces correct format for 12 components across one tool', () => {
+  it('produces correct format for 12 plugins across one tool', () => {
     const ids = Array.from({ length: 12 }, (_, i) =>
       makeId({ tool: 'claude-code', name: `item-${i}` }),
     );
     const result = buildDefaultFilename(ids);
     const today = new Date().toISOString().slice(0, 10);
-    expect(result).toBe(`plughub-12-components-claude-code-${today}`);
+    expect(result).toBe(`plughub-12-plugins-claude-code-${today}`);
   });
 
-  it('produces correct format for 5 components across two tools', () => {
+  it('produces correct format for 5 plugins across two tools', () => {
     const ids = [
       makeId({ tool: 'claude-code', name: 'a' }),
       makeId({ tool: 'claude-code', name: 'b' }),
@@ -848,6 +848,6 @@ describe('buildDefaultFilename', () => {
     ];
     const result = buildDefaultFilename(ids);
     const today = new Date().toISOString().slice(0, 10);
-    expect(result).toBe(`plughub-5-components-claude-code-claude-desktop-${today}`);
+    expect(result).toBe(`plughub-5-plugins-claude-code-claude-desktop-${today}`);
   });
 });

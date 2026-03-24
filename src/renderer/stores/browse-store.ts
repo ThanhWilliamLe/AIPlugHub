@@ -14,6 +14,8 @@ import type {
   ToolId,
   ComponentType,
 } from '@shared/types';
+import { useToolStore } from './tool-store';
+import { useToastStore } from './toast-store';
 
 export type BrowseSortBy = 'relevance' | 'name' | 'updated' | 'popularity';
 
@@ -161,8 +163,12 @@ export const useBrowseStore = create<BrowseStoreState>((set, get) => ({
       await window.aiplughub.browse.install(ref, target);
       set({ installingRef: null, lastInstalledRef: ref });
       // Refresh toolStore so My Setup sees the new component
-      const { useToolStore } = await import('./tool-store');
       useToolStore.getState().scanAll();
+      // Show install success toast
+      useToastStore.getState().addToast({
+        message: `"${ref.ref}" installed — you can manage it in My Setup`,
+        type: 'success',
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : String((err as { message?: string }).message ?? err);

@@ -120,9 +120,10 @@ export function BrowseDetailPanel() {
           {detailError && (
             <div className="rounded-lg bg-accent-destructive/10 p-3">
               <p className="text-sm text-accent-destructive">Couldn&apos;t load plugin details.</p>
+              <p className="text-xs text-accent-destructive/80 mt-1 select-all">{detailError}</p>
               <button
                 type="button"
-                className="text-xs text-accent-destructive underline mt-1"
+                className="text-xs text-accent-destructive underline mt-2"
                 onClick={() => useBrowseStore.getState().openDetail(selectedRef)}
               >
                 Retry
@@ -172,7 +173,7 @@ export function BrowseDetailPanel() {
                     <div key={type} className="flex items-center gap-2">
                       <TypeBadge type={type as ComponentType} />
                       <span className="text-sm text-sand-muted">
-                        {count ?? 0} {count === 1 ? 'item' : 'items'}
+                        {count ?? 0} {count === 1 ? 'plugin' : 'plugins'}
                       </span>
                     </div>
                   ))}
@@ -211,8 +212,15 @@ export function BrowseDetailPanel() {
                 {detail.repository && (
                   <div className="flex justify-between items-start gap-4">
                     <dt className="text-sand-secondary shrink-0">Source</dt>
-                    <dd className="font-mono text-xs text-sand-muted truncate text-right">
-                      {detail.repository}
+                    <dd className="font-mono text-xs truncate text-right">
+                      <button
+                        type="button"
+                        className="text-accent-olive hover:underline cursor-pointer"
+                        title={`Open ${detail.repository}`}
+                        onClick={() => window.aiplughub.system.openUrl(detail.repository!)}
+                      >
+                        {detail.repository}
+                      </button>
                     </dd>
                   </div>
                 )}

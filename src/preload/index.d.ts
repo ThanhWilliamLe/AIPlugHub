@@ -132,6 +132,7 @@ export interface AiPlugHubAPI {
   system: {
     openFileDialog(options: FileDialogOptions): Promise<string | null>;
     showInExplorer(path: string): Promise<void>;
+    openUrl(url: string): Promise<void>;
     getAppVersion(): Promise<string>;
     onFileDrop(callback: (filePath: string) => void): () => void;
     getPathForFile(file: File): string;

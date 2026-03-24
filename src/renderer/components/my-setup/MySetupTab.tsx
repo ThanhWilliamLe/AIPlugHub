@@ -10,7 +10,7 @@ import type { PluginGroup, ProjectGroup } from './ToolSection';
 import { useUiStore } from '@renderer/stores/ui-store';
 import { useComponents } from '@renderer/hooks/useComponents';
 import { componentIdEquals, componentIdKey } from '@shared/utils';
-import { ToolSection } from './ToolSection';
+import { ToolSection, ProjectGroupSection } from './ToolSection';
 import { SearchBar } from './SearchBar';
 import { FilterPills } from './FilterPills';
 import { DetailPanel } from './DetailPanel';
@@ -47,11 +47,28 @@ export function MySetupTab() {
   const startExportWithSelection = useWizardStore((s) => s.startExportWithSelection);
   const addToast = useToastStore((s) => s.addToast);
 
+  const scanAllAction = useToolStore((s) => s.scanAll);
+  const handleRescan = useCallback(async () => {
+    const beforeCount = useToolStore.getState().components.length;
+    await scanAllAction();
+    const afterCount = useToolStore.getState().components.length;
+    const delta = afterCount - beforeCount;
+    const msg =
+      delta > 0
+        ? `Refresh complete \u2014 ${delta} new plugin${delta !== 1 ? 's' : ''} found`
+        : delta < 0
+          ? `Refresh complete \u2014 ${Math.abs(delta)} plugin${Math.abs(delta) !== 1 ? 's' : ''} removed`
+          : `Refresh complete \u2014 no changes`;
+    addToast({ message: msg, type: 'success' });
+  }, [scanAllAction, addToast]);
+
   const {
     toolGroups,
+    projectGroups,
     hasTools,
     hasComponents,
     filteredCount,
+    totalCount,
     filteredComponents,
     isFiltered,
     scanning,
@@ -129,8 +146,12 @@ export function MySetupTab() {
   // Escape + Ctrl+A key handlers
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selectionMode && !showBulkUninstall && !showUninstallConfirm) {
-        exitSelectionMode();
+      if (e.key === 'Escape' && !showBulkUninstall && !showUninstallConfirm) {
+        if (selectionMode) {
+          exitSelectionMode();
+        } else if (selectedComponentId) {
+          selectComponent(null);
+        }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a' && selectionMode) {
         e.preventDefault();
@@ -151,6 +172,8 @@ export function MySetupTab() {
     filteredComponents,
     selectedIds,
     setSelectedIds,
+    selectComponent,
+    selectedComponentId,
   ]);
 
   const handleCheckChange = useCallback(
@@ -239,13 +262,22 @@ export function MySetupTab() {
         title="No plugins yet"
         description="Your AI tools are installed but have no plugins configured. Browse the marketplace to get started!"
         action={
-          <Button
-            className="bg-accent-olive text-white hover:bg-accent-olive/90"
-            size="sm"
-            onClick={() => setActiveTab('browse')}
-          >
-            Browse plugins
-          </Button>
+          <div className="flex flex-col items-center gap-2">
+            <Button
+              className="bg-accent-olive text-white hover:bg-accent-olive/90"
+              size="sm"
+              onClick={() => setActiveTab('browse')}
+            >
+              Browse plugins
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveTab('transfer')}
+            >
+              Import a bundle
+            </Button>
+          </div>
         }
       />
     );
@@ -259,7 +291,22 @@ export function MySetupTab() {
           <div className="flex-1">
             <SearchBar />
           </div>
+          <span className="text-xs text-stone-400 ml-2">
+            {filteredCount === totalCount
+              ? `${totalCount} plugins`
+              : `${filteredCount} of ${totalCount} plugins`}
+          </span>
           <UpdateToolbarPill />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRescan}
+            disabled={scanning}
+            aria-label="Refresh plugins"
+            title="Check for any changes to your installed plugins"
+          >
+            {scanning ? <span className="animate-pulse">Refreshing...</span> : '\u21BB Refresh'}
+          </Button>
           <button
             type="button"
             className={cn(
@@ -325,11 +372,26 @@ export function MySetupTab() {
             toolId={group.toolId}
             components={group.components}
             pluginGroups={(group as unknown as { pluginGroups?: PluginGroup[] }).pluginGroups}
-            projectGroups={(group as unknown as { projectGroups?: ProjectGroup[] }).projectGroups}
             selectedComponentId={selectedComponentId}
             onSelectComponent={handleSelectComponent}
             onToggleComponent={handleToggleWithToast}
             onTogglePlugin={handleTogglePlugin}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onCheckChange={handleCheckChange}
+            onCheckGroup={handleCheckGroup}
+          />
+        ))}
+
+        {/* Project folders as top-level sections (UX-01) */}
+        {projectGroups.map((group) => (
+          <ProjectGroupSection
+            key={group.projectPath}
+            group={group}
+            defaultExpanded={projectGroups.length <= 3}
+            selectedComponentId={selectedComponentId}
+            onSelectComponent={handleSelectComponent}
+            onToggleComponent={handleToggleWithToast}
             selectionMode={selectionMode}
             selectedIds={selectedIds}
             onCheckChange={handleCheckChange}

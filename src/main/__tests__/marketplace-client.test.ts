@@ -35,8 +35,8 @@ describe('MarketplaceCache', () => {
 
   it('returns null for expired cache entry', async () => {
     await cache.setManifest('test-source', [{ name: 'plugin1' }]);
-    // TTL of 0 means immediately expired
-    const result = await cache.getManifest('test-source', 0);
+    await new Promise((r) => setTimeout(r, 5));
+    const result = await cache.getManifest('test-source', 1);
     expect(result).toBeNull();
   });
 
@@ -89,7 +89,8 @@ describe('MarketplaceCache', () => {
 
   it('detail cache returns null for expired entry', async () => {
     await cache.setDetail('source1', 'plugin1', { foo: 'bar' });
-    const result = await cache.getDetail('source1', 'plugin1', 0);
+    await new Promise((r) => setTimeout(r, 5));
+    const result = await cache.getDetail('source1', 'plugin1', 1);
     expect(result).toBeNull();
   });
 
@@ -589,7 +590,7 @@ describe('GitMarketplaceSource', () => {
       }],
     };
 
-    const pluginJson = { components: [{ type: 'skill', name: 'my-skill', content: 'do stuff' }] };
+    const pluginJson = { components: [{ type: 'skill', name: 'my-skill', content: 'do stuff', core: { content: 'do stuff' } }] };
 
     let callCount = 0;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
@@ -1301,7 +1302,7 @@ describe('UrlIndexSource', () => {
         return new Response(JSON.stringify(index), { status: 200 });
       }
       // plugin.json fetch
-      const components = [{ type: 'skill', name: 's', content: 'x' }];
+      const components = [{ type: 'skill', name: 's', content: 'x', core: { content: 'x' } }];
       return new Response(JSON.stringify({ components }), { status: 200 });
     });
 
@@ -1693,7 +1694,7 @@ describe('MarketplaceClient', () => {
   // ─── install() ────────────────────────────────────────────────────
 
   it('install calls adapter.install with component and returns result', async () => {
-    const component = { type: 'skill' as const, name: 'my-skill', content: 'do stuff' };
+    const component = { type: 'skill' as const, name: 'my-skill', content: 'do stuff', core: { content: 'do stuff' } };
     const manifest: GitMarketplaceManifest = {
       name: 'official',
       plugins: [{ name: 'install-plugin', source: './install', description: 'Install me' }],
@@ -1745,8 +1746,8 @@ describe('MarketplaceClient', () => {
 
   it('install installs multiple components and returns the last one', async () => {
     const components = [
-      { type: 'skill' as const, name: 'skill-1', content: 'do stuff 1' },
-      { type: 'hook' as const, name: 'hook-1', content: 'do stuff 2' },
+      { type: 'skill' as const, name: 'skill-1', content: 'do stuff 1', core: { content: 'do stuff 1' } },
+      { type: 'hook' as const, name: 'hook-1', content: 'do stuff 2', core: { content: 'do stuff 2' } },
     ];
 
     const manifest: GitMarketplaceManifest = {
@@ -2016,12 +2017,13 @@ describe('MarketplaceClient', () => {
     });
   });
 
-  it('removeSource throws VALIDATION_ERROR when removing built-in source', async () => {
+  it('removeSource removes built-in source without error', async () => {
     const client = makeClient();
-
-    await expect(client.removeSource('claude-plugins-official')).rejects.toMatchObject({
-      code: 'VALIDATION_ERROR',
-    });
+    // Built-in sources can now be removed — no longer throws VALIDATION_ERROR
+    await client.removeSource('claude-plugins-official');
+    const entries = await client.getEntries();
+    // Source should be gone from the client
+    expect(entries.every((e) => e.sourceId !== 'claude-plugins-official')).toBe(true);
   });
 
   it('removeSource persists changes and invalidates cache', async () => {
@@ -2123,13 +2125,13 @@ describe('MarketplaceClient', () => {
     const client = makeClient({ claudeRootPath: tmpDir });
     const sources = await client.getSources();
 
-    // Should have 2 native sources, no BUILTIN_SOURCE
-    expect(sources.some(s => s.sourceId === 'native-official-plugins')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'native-community-plugins')).toBe(true);
+    // Should have 2 native sources (actual IDs, no prefix), no BUILTIN_SOURCE
+    expect(sources.some(s => s.sourceId === 'official-plugins')).toBe(true);
+    expect(sources.some(s => s.sourceId === 'community-plugins')).toBe(true);
     expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(false);
 
     // Check URL construction
-    const officialSrc = sources.find(s => s.sourceId === 'native-official-plugins')!;
+    const officialSrc = sources.find(s => s.sourceId === 'official-plugins')!;
     expect(officialSrc.url).toBe('https://github.com/anthropics/claude-plugins-official');
     expect(officialSrc.isBuiltIn).toBe(true);
     expect(officialSrc.displayName).toBe('Official Plugins');
@@ -2204,10 +2206,10 @@ describe('MarketplaceClient', () => {
     const client = makeClient({ claudeRootPath: tmpDir });
     const sources = await client.getSources();
 
-    // Only github entry with repo should appear
-    expect(sources.some(s => s.sourceId === 'native-github-plugins')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'native-gitlab-plugins')).toBe(false);
-    expect(sources.some(s => s.sourceId === 'native-no-repo')).toBe(false);
+    // Only github entry with repo should appear (actual IDs, no prefix)
+    expect(sources.some(s => s.sourceId === 'github-plugins')).toBe(true);
+    expect(sources.some(s => s.sourceId === 'gitlab-plugins')).toBe(false);
+    expect(sources.some(s => s.sourceId === 'no-repo')).toBe(false);
 
     // Cleanup
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -2251,8 +2253,8 @@ describe('MarketplaceClient', () => {
     const client = makeClient({ claudeRootPath: tmpDir, dataStore });
     const sources = await client.getSources();
 
-    // Should have native source + custom source, but NOT BUILTIN_SOURCE
-    expect(sources.some(s => s.sourceId === 'native-native-mp')).toBe(true);
+    // Should have native source (actual ID) + custom source, but NOT BUILTIN_SOURCE
+    expect(sources.some(s => s.sourceId === 'native-mp')).toBe(true);
     expect(sources.some(s => s.sourceId === 'custom-999')).toBe(true);
     expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(false);
 

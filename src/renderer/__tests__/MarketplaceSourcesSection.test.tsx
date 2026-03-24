@@ -78,16 +78,15 @@ describe('MarketplaceSourcesSection', () => {
     });
   });
 
-  it('built-in sources cannot be removed (no Remove button)', async () => {
+  it('all sources have a Remove button (built-in shows confirmation dialog)', async () => {
     vi.mocked(window.aiplughub.settings.getSources).mockResolvedValue(MOCK_SOURCES);
     render(<MarketplaceSourcesSection />);
     await waitFor(() => {
       expect(screen.getByText('Claude Official')).toBeInTheDocument();
     });
-    // Should have Remove for custom-1 and url-only, but NOT for built-in claude-official
+    // All 3 sources should have Remove buttons (built-in ones trigger a confirmation dialog)
     const removeButtons = screen.getAllByRole('button', { name: /remove/i });
-    // 2 non-built-in sources
-    expect(removeButtons).toHaveLength(2);
+    expect(removeButtons).toHaveLength(3);
   });
 
   it('removes a source when Remove button is clicked', async () => {
@@ -164,10 +163,7 @@ describe('MarketplaceSourcesSection', () => {
     await waitFor(() => screen.getByText('+ Add Source'));
     await userEvent.click(screen.getByText('+ Add Source'));
 
-    await userEvent.type(
-      screen.getByLabelText('Source URL'),
-      'https://example.com/plugins.json',
-    );
+    await userEvent.type(screen.getByLabelText('Source URL'), 'https://example.com/plugins.json');
     await userEvent.type(screen.getByLabelText('Display name'), 'My Source');
 
     await userEvent.click(screen.getByRole('button', { name: 'Add Source' }));
@@ -187,10 +183,7 @@ describe('MarketplaceSourcesSection', () => {
     await waitFor(() => screen.getByText('+ Add Source'));
     await userEvent.click(screen.getByText('+ Add Source'));
 
-    await userEvent.type(
-      screen.getByLabelText('Source URL'),
-      'https://example.com/plugins.json',
-    );
+    await userEvent.type(screen.getByLabelText('Source URL'), 'https://example.com/plugins.json');
     await userEvent.click(screen.getByRole('button', { name: 'Add Source' }));
 
     await waitFor(() => {
@@ -199,9 +192,7 @@ describe('MarketplaceSourcesSection', () => {
   });
 
   it('shows error when getSources fails on load', async () => {
-    vi.mocked(window.aiplughub.settings.getSources).mockRejectedValue(
-      new Error('Failed to load'),
-    );
+    vi.mocked(window.aiplughub.settings.getSources).mockRejectedValue(new Error('Failed to load'));
     render(<MarketplaceSourcesSection />);
     await waitFor(() => {
       expect(screen.getByText('Failed to load')).toBeInTheDocument();
@@ -211,14 +202,70 @@ describe('MarketplaceSourcesSection', () => {
   it('shows source type label for git repositories', async () => {
     const gitSource: MarketplaceSourceConfig = {
       sourceId: 'git-1',
-      sourceType: 'git',
+      sourceType: 'git-marketplace',
       url: 'https://github.com/example/plugins',
+      displayName: 'Example Plugins',
       isBuiltIn: false,
     };
     vi.mocked(window.aiplughub.settings.getSources).mockResolvedValue([gitSource]);
     render(<MarketplaceSourcesSection />);
     await waitFor(() => {
-      expect(screen.getByText('Git Repository')).toBeInTheDocument();
+      expect(screen.getByText('GitHub Repository')).toBeInTheDocument();
+    });
+  });
+
+  it('shows source type selector in add form', async () => {
+    render(<MarketplaceSourcesSection />);
+    await waitFor(() => screen.getByText('+ Add Source'));
+    await userEvent.click(screen.getByText('+ Add Source'));
+    expect(screen.getByLabelText('Source type')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'GitHub Repository' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Custom URL' })).toBeInTheDocument();
+  });
+
+  it('auto-detects git-marketplace when github.com URL is entered', async () => {
+    vi.mocked(window.aiplughub.settings.addSource).mockResolvedValue({} as never);
+    vi.mocked(window.aiplughub.settings.getSources).mockResolvedValue([]);
+    render(<MarketplaceSourcesSection />);
+    await waitFor(() => screen.getByText('+ Add Source'));
+    await userEvent.click(screen.getByText('+ Add Source'));
+
+    await userEvent.type(screen.getByLabelText('Source URL'), 'https://github.com/owner/repo');
+
+    // Verify the dropdown visually updated to GitHub Repository
+    expect(screen.getByLabelText('Source type')).toHaveValue('git-marketplace');
+
+    await userEvent.type(screen.getByLabelText('Display name'), 'GitHub Source');
+    await userEvent.click(screen.getByRole('button', { name: 'Add Source' }));
+
+    expect(window.aiplughub.settings.addSource).toHaveBeenCalledWith({
+      sourceType: 'git-marketplace',
+      url: 'https://github.com/owner/repo',
+      displayName: 'GitHub Source',
+    });
+  });
+
+  it('manual type selection is not overwritten by URL auto-detection', async () => {
+    vi.mocked(window.aiplughub.settings.addSource).mockResolvedValue({} as never);
+    vi.mocked(window.aiplughub.settings.getSources).mockResolvedValue([]);
+    render(<MarketplaceSourcesSection />);
+    await waitFor(() => screen.getByText('+ Add Source'));
+    await userEvent.click(screen.getByText('+ Add Source'));
+
+    // Manually select Custom URL
+    await userEvent.selectOptions(screen.getByLabelText('Source type'), 'url-index');
+    expect(screen.getByLabelText('Source type')).toHaveValue('url-index');
+
+    // Type a GitHub URL — should NOT override manual selection
+    await userEvent.type(screen.getByLabelText('Source URL'), 'https://github.com/owner/repo');
+    expect(screen.getByLabelText('Source type')).toHaveValue('url-index');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Source' }));
+
+    expect(window.aiplughub.settings.addSource).toHaveBeenCalledWith({
+      sourceType: 'url-index',
+      url: 'https://github.com/owner/repo',
+      displayName: undefined,
     });
   });
 });

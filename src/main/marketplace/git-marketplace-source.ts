@@ -18,6 +18,7 @@ import {
   SOURCE_FETCH_TIMEOUT_MS,
   sanitizeEntryFields,
 } from './marketplace-source';
+import { validatePortableComponent } from '../bundle/serializer';
 
 export type GitMarketplaceOptions = {
   sourceId: string;
@@ -188,7 +189,17 @@ export class GitMarketplaceSource implements MarketplaceSource {
       const pluginJson = (await response.json()) as { components?: unknown };
       // plugin.json may contain a components array or individual fields
       if (Array.isArray(pluginJson.components)) {
-        return pluginJson.components as PortableComponent[];
+        const validated: PortableComponent[] = [];
+        for (const comp of pluginJson.components) {
+          try {
+            validatePortableComponent(comp as Record<string, unknown>);
+            validated.push(comp as PortableComponent);
+          } catch {
+            // Skip invalid components from remote sources
+            console.warn(`[GitMarketplaceSource] Skipping invalid component in ${plugin.name}`);
+          }
+        }
+        return validated;
       }
       return [];
     } catch {

@@ -68,7 +68,7 @@ function ChangeEntry({ change }: { change: ComponentChange }) {
       {/* Removed component warning */}
       {change.changeType === 'removed' && (
         <p className="text-[10px] text-[#D4614A]/80 mt-1 ml-2">
-          This component will be removed during update
+          This plugin will be removed during update
         </p>
       )}
     </div>
@@ -120,7 +120,7 @@ export const UpdateCard = React.memo(function UpdateCard({ update }: UpdateCardP
   if (update.addedCount > 0) changeSummaryParts.push(`${update.addedCount} added`);
   if (update.modifiedCount > 0) changeSummaryParts.push(`${update.modifiedCount} modified`);
   if (update.removedCount > 0) changeSummaryParts.push(`${update.removedCount} removed`);
-  const changeSummary = changeSummaryParts.join(', ') || 'No component changes';
+  const changeSummary = changeSummaryParts.join(', ') || 'No changes';
 
   return (
     <div

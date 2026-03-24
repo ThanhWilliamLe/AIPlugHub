@@ -1107,7 +1107,7 @@ describe('ClaudeCodeAdapter.scanPlugins', () => {
     expect(pluginComponents.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('sets enabled based on enabledPlugins', async () => {
+  it('does not expose enabled on plugin sub-components (canToggle is false)', async () => {
     await createPluginFixture(rootPath);
 
     // Update settings.json with enabledPlugins
@@ -1118,17 +1118,7 @@ describe('ClaudeCodeAdapter.scanPlugins', () => {
     const components = await adapter.scan();
     const pluginComponents = components.filter((c) => c.id.scope === 'plugin');
     for (const c of pluginComponents) {
-      expect(c.enabled).toBe(true);
-    }
-  });
-
-  it('defaults to enabled=false when not in enabledPlugins', async () => {
-    await createPluginFixture(rootPath);
-
-    const components = await adapter.scan();
-    const pluginComponents = components.filter((c) => c.id.scope === 'plugin');
-    for (const c of pluginComponents) {
-      expect(c.enabled).toBe(false);
+      expect(c.enabled).toBeUndefined();
     }
   });
 

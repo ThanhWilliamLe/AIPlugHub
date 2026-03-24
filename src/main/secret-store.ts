@@ -5,10 +5,11 @@
  * Source: 4B-architecture/system-design.md §1.5
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, copyFile } from 'fs/promises';
 import { dirname } from 'path';
 import type { Logger } from './logger';
 import { AppError } from '@shared/types';
+import { assertWriteAllowed } from './write-guard';
 
 export interface SecretStore {
   get(service: string, key: string): Promise<string | null>;
@@ -35,6 +36,7 @@ export function createSecretStore(
   logger: Logger,
 ): SecretStore {
   const MODULE = 'SecretStore';
+  let _decryptionFailed = false;
 
   function available(): boolean {
     return safeStorage.isEncryptionAvailable();
@@ -50,12 +52,26 @@ export function createSecretStore(
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         return {};
       }
-      logger.error(MODULE, 'Failed to read secrets file', err as Error);
+      // Decryption or parse failure — flag it and backup the corrupted file
+      logger.error(MODULE, 'Failed to decrypt/parse secrets file', err as Error);
+      _decryptionFailed = true;
+      try {
+        await copyFile(filePath, `${filePath}.corrupt-${Date.now()}`);
+        logger.info(MODULE, 'Backed up corrupted secrets file');
+      } catch (backupErr) {
+        logger.error(MODULE, 'Failed to backup corrupted secrets file', backupErr as Error);
+      }
       return {};
     }
   }
 
   async function writeSecrets(data: SecretData): Promise<void> {
+    assertWriteAllowed(filePath);
+
+    if (_decryptionFailed && Object.keys(data).length === 0) {
+      logger.warn(MODULE, 'Writing empty secrets after decryption failure — corrupted file was backed up');
+    }
+
     const json = JSON.stringify(data);
     const encrypted = safeStorage.encryptString(json);
 

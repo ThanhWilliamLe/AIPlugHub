@@ -118,7 +118,7 @@ describe('BrowseDetailPanel', () => {
     });
     render(<BrowseDetailPanel />);
     expect(screen.getByText('MCP Server')).toBeInTheDocument();
-    expect(screen.getByText('1 item')).toBeInTheDocument();
+    expect(screen.getByText('1 plugin')).toBeInTheDocument();
   });
 
   it('shows compatible tools badges', () => {

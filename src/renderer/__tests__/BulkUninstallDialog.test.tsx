@@ -18,7 +18,7 @@ describe('BulkUninstallDialog', () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Uninstall 2 components/)).toBeDefined();
+    expect(screen.getByText(/Uninstall 2 plugins/)).toBeDefined();
   });
 
   it('groups by tool', () => {

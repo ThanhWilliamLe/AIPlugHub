@@ -167,13 +167,12 @@ export function PreferencesSection() {
         <div className="flex items-center justify-between mb-1">
           <p className="text-sm font-medium text-sand-text">GitHub Token</p>
           {hasToken && (
-            <span className="text-xs text-accent-olive font-medium">
-              {'\u2713'} Configured
-            </span>
+            <span className="text-xs text-accent-olive font-medium">{'\u2713'} Configured</span>
           )}
         </div>
         <p className="text-xs text-sand-secondary mb-3">
-          Optional. Increases GitHub API rate limits for marketplace browsing. Stored in OS keychain.
+          Optional. Increases GitHub API rate limits for marketplace browsing. Stored in OS
+          keychain.
         </p>
 
         {hasToken ? (
@@ -234,16 +233,12 @@ function UpdateCheckSection({
     setCheckDone(true);
   }, [checkForUpdates]);
 
-  const lastChecked = prefs.lastUpdateCheck
-    ? formatRelativeTime(prefs.lastUpdateCheck)
-    : 'never';
+  const lastChecked = prefs.lastUpdateCheck ? formatRelativeTime(prefs.lastUpdateCheck) : 'never';
 
   return (
     <div className="px-4 py-3 rounded-lg border border-sand-border bg-sand-surface/30 mb-3">
       <p className="text-sm font-medium text-sand-text mb-1">Plugin updates</p>
-      <p className="text-xs text-sand-secondary mb-3">
-        Last checked: {lastChecked}
-      </p>
+      <p className="text-xs text-sand-secondary mb-3">Last checked: {lastChecked}</p>
 
       <div className="flex items-center gap-2 mb-3">
         <button
@@ -256,13 +251,12 @@ function UpdateCheckSection({
         </button>
         {checkDone && availableUpdates.length > 0 && (
           <span className="text-xs text-accent-olive font-medium">
-            {'\u2B06'} {availableUpdates.length} update{availableUpdates.length !== 1 ? 's' : ''} found
+            {'\u2B06'} {availableUpdates.length} update{availableUpdates.length !== 1 ? 's' : ''}{' '}
+            found
           </span>
         )}
         {checkDone && availableUpdates.length === 0 && (
-          <span className="text-xs text-accent-olive font-medium">
-            {'\u2713'} All up to date
-          </span>
+          <span className="text-xs text-accent-olive font-medium">{'\u2713'} All up to date</span>
         )}
       </div>
 
@@ -296,11 +290,22 @@ function formatRelativeTime(isoDate: string): string {
 
 function AppVersion() {
   const [version, setVersion] = useState<string>('');
+  const [versionError, setVersionError] = useState<string | null>(null);
 
   useEffect(() => {
-    window.aiplughub.system.getAppVersion().then(setVersion).catch(() => {});
+    window.aiplughub.system
+      .getAppVersion()
+      .then(setVersion)
+      .catch((err) => setVersionError(err instanceof Error ? err.message : String(err)));
   }, []);
 
+  if (versionError) {
+    return (
+      <p className="text-xs text-accent-destructive select-all">
+        Could not read app version: {versionError}
+      </p>
+    );
+  }
   if (!version) return null;
   return <p className="text-xs text-sand-muted">AI Plug Hub v{version}</p>;
 }

@@ -70,6 +70,11 @@ contextBridge.exposeInMainWorld('aiplughub', {
       return unwrap(result);
     },
 
+    async openUrl(url: string) {
+      const result = await ipcRenderer.invoke('system:openUrl', url);
+      return unwrap(result);
+    },
+
     async getAppVersion() {
       const result = await ipcRenderer.invoke('system:getAppVersion');
       return unwrap(result);

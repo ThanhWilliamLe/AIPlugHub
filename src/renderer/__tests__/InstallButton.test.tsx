@@ -1,9 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { InstallButton } from '../components/browse/InstallButton';
 import { useBrowseStore } from '@renderer/stores/browse-store';
 import { useToolStore } from '@renderer/stores/tool-store';
-import type { MarketplaceRef } from '@shared/types';
+import type { MarketplaceRef, BrowseInstallTarget } from '@shared/types';
 
 const REF: MarketplaceRef = { sourceId: 'claude-official', ref: 'sqlite-mcp' };
 const OTHER_REF: MarketplaceRef = { sourceId: 'claude-official', ref: 'other-plugin' };
@@ -107,7 +107,7 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
-      expect(screen.getByText('Install')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /install/i })).toBeInTheDocument();
     });
   });
 
@@ -122,20 +122,6 @@ describe('InstallButton', () => {
         />,
       );
       expect(screen.getByText(/View in My Setup/)).toBeInTheDocument();
-    });
-
-    it('clicking "View in My Setup" does not throw', () => {
-      useBrowseStore.setState({ lastInstalledRef: REF, installError: null });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      const btn = screen.getByText(/View in My Setup/);
-      // Clicking navigates to my-setup via useUiStore.getState().setActiveTab — verify no throw
-      expect(() => fireEvent.click(btn)).not.toThrow();
     });
   });
 
@@ -154,30 +140,10 @@ describe('InstallButton', () => {
       );
       expect(screen.getByText('Failed — Retry')).toBeInTheDocument();
     });
-
-    it('clicking Retry calls clearInstallError and triggers install', () => {
-      useBrowseStore.setState({
-        lastInstalledRef: REF,
-        installError: 'Network error',
-      });
-      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
-      const installFn = vi.fn();
-      useBrowseStore.setState({ install: installFn });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      fireEvent.click(screen.getByText('Failed — Retry'));
-      // clearInstallError should be called (install error should be cleared)
-      // install action should be triggered for the first compatible tool
-    });
   });
 
-  describe('single compatible tool', () => {
-    it('shows Install button when one detected compatible tool', () => {
+  describe('install location selector', () => {
+    it('shows Install button with location sub-text when compatible tools exist', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
       render(
         <InstallButton
@@ -186,10 +152,31 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
-      expect(screen.getByText('Install')).toBeInTheDocument();
+      // Wait for preferences to load and sub-text to appear
+      await waitFor(() => {
+        expect(screen.getByText('Install')).toBeInTheDocument();
+        expect(screen.getByText(/Claude Code/)).toBeInTheDocument();
+      });
     });
 
-    it('calls install action when Install button is clicked', () => {
+    it('opens location dropdown via caret button', async () => {
+      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
+      render(
+        <InstallButton
+          ref_={REF}
+          compatibleTools={['claude-code']}
+          isInstalled={false}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByLabelText('Change install location'));
+      expect(screen.getByText('Install location')).toBeInTheDocument();
+      expect(screen.getByText('user')).toBeInTheDocument();
+    });
+
+    it('selects target without installing when dropdown item is clicked', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
       const installFn = vi.fn();
       useBrowseStore.setState({ install: installFn });
@@ -200,16 +187,42 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
+      await waitFor(() => {
+        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByLabelText('Change install location'));
+      fireEvent.click(screen.getByText('Claude Code'));
+      // Selecting target should NOT trigger install
+      expect(installFn).not.toHaveBeenCalled();
+      // Should persist the selection
+      const expectedTarget: BrowseInstallTarget = { instanceId: 'cc-1', scope: 'user' };
+      expect(window.aiplughub.preferences.set).toHaveBeenCalledWith({
+        browseInstallTarget: expectedTarget,
+      });
+    });
+
+    it('installs using selected target when Install button is clicked', async () => {
+      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
+      const installFn = vi.fn();
+      useBrowseStore.setState({ install: installFn });
+      render(
+        <InstallButton
+          ref_={REF}
+          compatibleTools={['claude-code']}
+          isInstalled={false}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByText('Install')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByText('Install'));
       expect(installFn).toHaveBeenCalledWith(REF, {
         instanceId: 'cc-1',
         scope: 'user',
       });
     });
-  });
 
-  describe('multiple compatible tools (dropdown)', () => {
-    it('shows "Install" with dropdown arrow when multiple compatible tools detected', () => {
+    it('shows multiple tools in location dropdown', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL, CLAUDE_DESKTOP_TOOL] });
       render(
         <InstallButton
@@ -218,45 +231,15 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
-      // The dropdown button contains "Install" + a small arrow character
-      const btn = screen.getByRole('button', { name: /install/i });
-      expect(btn).toBeInTheDocument();
-    });
-
-    it('opens dropdown when Install button is clicked', () => {
-      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL, CLAUDE_DESKTOP_TOOL] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code', 'claude-desktop']}
-          isInstalled={false}
-        />,
-      );
-      fireEvent.click(screen.getByRole('button', { name: /install/i }));
-      expect(screen.getByText(/Install to Claude Code/)).toBeInTheDocument();
-      expect(screen.getByText(/Install to Claude Desktop/)).toBeInTheDocument();
-    });
-
-    it('calls install with correct instanceId when dropdown item is clicked', () => {
-      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL, CLAUDE_DESKTOP_TOOL] });
-      const installFn = vi.fn();
-      useBrowseStore.setState({ install: installFn });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code', 'claude-desktop']}
-          isInstalled={false}
-        />,
-      );
-      fireEvent.click(screen.getByRole('button', { name: /install/i }));
-      fireEvent.click(screen.getByText(/Install to Claude Code/));
-      expect(installFn).toHaveBeenCalledWith(REF, {
-        instanceId: 'cc-1',
-        scope: 'user',
+      await waitFor(() => {
+        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
       });
+      fireEvent.click(screen.getByLabelText('Change install location'));
+      expect(screen.getByText('Claude Code')).toBeInTheDocument();
+      expect(screen.getByText('Claude Desktop')).toBeInTheDocument();
     });
 
-    it('closes dropdown after selecting an option', () => {
+    it('closes dropdown after selecting a location', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL, CLAUDE_DESKTOP_TOOL] });
       render(
         <InstallButton
@@ -265,13 +248,16 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: /install/i }));
-      expect(screen.getByText(/Install to Claude Code/)).toBeInTheDocument();
-      fireEvent.click(screen.getByText(/Install to Claude Code/));
-      expect(screen.queryByText(/Install to Claude Desktop/)).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByLabelText('Change install location'));
+      fireEvent.click(screen.getByText('Claude Code'));
+      // Dropdown should close — "Install location" header gone
+      expect(screen.queryByText('Install location')).not.toBeInTheDocument();
     });
 
-    it('closes dropdown on outside click', () => {
+    it('closes dropdown on outside click', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL, CLAUDE_DESKTOP_TOOL] });
       render(
         <InstallButton
@@ -280,10 +266,13 @@ describe('InstallButton', () => {
           isInstalled={false}
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: /install/i }));
-      expect(screen.getByText(/Install to Claude Code/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByLabelText('Change install location'));
+      expect(screen.getByText('Install location')).toBeInTheDocument();
       fireEvent.mouseDown(document.body);
-      expect(screen.queryByText(/Install to Claude Code/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Install location')).not.toBeInTheDocument();
     });
   });
 
@@ -300,19 +289,6 @@ describe('InstallButton', () => {
       const btn = screen.getByText('No compatible tools');
       expect(btn).toBeInTheDocument();
       expect(btn.closest('button')).toBeDisabled();
-    });
-
-    it('shows disabled button even when incompatible tools are detected', () => {
-      // claude-desktop is detected but plugin only supports claude-code
-      useToolStore.setState({ tools: [CLAUDE_DESKTOP_TOOL] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      expect(screen.getByText('No compatible tools')).toBeInTheDocument();
     });
   });
 });

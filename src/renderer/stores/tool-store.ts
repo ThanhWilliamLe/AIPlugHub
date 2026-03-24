@@ -79,6 +79,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
   },
 
   scanAll: async () => {
+    if (get().scanning) return; // Guard against concurrent calls
     set({ scanning: true, error: null });
     try {
       const components = await window.aiplughub.tools.scanAll();

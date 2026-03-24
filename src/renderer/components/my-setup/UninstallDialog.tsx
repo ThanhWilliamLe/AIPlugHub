@@ -34,11 +34,7 @@ export function UninstallDialog({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/20"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 z-50 bg-black/20" onClick={onCancel} aria-hidden="true" />
 
       {/* Dialog */}
       <div
@@ -49,25 +45,20 @@ export function UninstallDialog({
         aria-describedby="uninstall-description"
       >
         <div className="bg-sand-paper rounded-xl shadow-xl border border-sand-border p-6 max-w-sm w-full animate-bounce-in">
-          <h2
-            id="uninstall-title"
-            className="text-lg font-semibold text-sand-text mb-2"
-          >
+          <h2 id="uninstall-title" className="text-lg font-semibold text-sand-text mb-2">
             Uninstall {componentName}?
           </h2>
-          <p
-            id="uninstall-description"
-            className="text-sm text-sand-secondary mb-6"
-          >
-            This will remove the component from your tool configuration. This action cannot be undone.
+          <p id="uninstall-description" className="text-sm text-sand-secondary mb-6">
+            This will remove the plugin from your tool configuration. This action cannot be
+            undone.
           </p>
           <div className="flex gap-3 justify-end">
             <Button variant="outline" size="sm" onClick={onCancel}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
               size="sm"
+              className="bg-accent-destructive text-white hover:bg-accent-destructive/90"
               onClick={() => onConfirm(componentId)}
               autoFocus
             >

@@ -18,6 +18,7 @@ import {
   SOURCE_FETCH_TIMEOUT_MS,
   sanitizeEntryFields,
 } from './marketplace-source';
+import { validatePortableComponent } from '../bundle/serializer';
 
 export type UrlIndexOptions = {
   sourceId: string;
@@ -98,7 +99,7 @@ export class UrlIndexSource implements MarketplaceSource {
       components,
       homepage: safeUrl,
       repository: safeUrl,
-      installSource: { type: 'git', url: safeUrl ?? plugin.url },
+      installSource: { type: 'git', url: safeUrl ?? '' },
     };
   }
 
@@ -137,7 +138,17 @@ export class UrlIndexSource implements MarketplaceSource {
 
       const data = (await response.json()) as { components?: unknown };
       if (Array.isArray(data.components)) {
-        return data.components as PortableComponent[];
+        const validated: PortableComponent[] = [];
+        for (const comp of data.components) {
+          try {
+            validatePortableComponent(comp as Record<string, unknown>);
+            validated.push(comp as PortableComponent);
+          } catch {
+            // Skip invalid components from remote sources
+            console.warn(`[UrlIndexSource] Skipping invalid component in ${plugin.name}`);
+          }
+        }
+        return validated;
       }
       return [];
     } catch {

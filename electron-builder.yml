@@ -4,6 +4,9 @@ directories:
   buildResources: build
   output: dist
 asar: true
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 files:
   - '!**/.vscode/*'
   - '!src/**/*'
@@ -17,22 +20,22 @@ win:
     - portable
   signAndEditExecutable: false
 portable:
-  artifactName: AIPlugHub-${version}-portable.exe
+  artifactName: aiplughub-windows-x64-portable.exe
 nsis:
   oneClick: false
   createDesktopShortcut: true
   perMachine: false
-  artifactName: AIPlugHub-${version}-installer.exe
+  artifactName: aiplughub-windows-x64-installer.exe
 mac:
   target: dmg
   category: public.app-category.developer-tools
-  artifactName: AIPlugHub-${version}.dmg
+  artifactName: aiplughub-macos-${arch}.dmg
 linux:
   target:
     - AppImage
     - deb
   category: Development
-  artifactName: AIPlugHub-${version}.${ext}
+  artifactName: aiplughub-linux-x64.${ext}
 fileAssociations:
   - ext: aibundle
     name: AI Bundle

@@ -149,14 +149,24 @@ function groupByTool(
     }
     projectGroups.sort((a, b) => a.projectName.localeCompare(b.projectName));
 
-    if (standalone.length > 0 || pluginGroups.length > 0 || projectGroups.length > 0) {
+    if (standalone.length > 0 || pluginGroups.length > 0) {
       groups.push({
         toolId: tool.toolId,
         instanceId: tool.instanceId,
         components: standalone,
         pluginGroups,
         projectGroups,
-        totalCount: standalone.length + pluginComps.length + projectComps.length,
+        totalCount: standalone.length + pluginComps.length,
+      });
+    } else if (projectGroups.length > 0) {
+      // Tool has only project components — still need the group for project extraction
+      groups.push({
+        toolId: tool.toolId,
+        instanceId: tool.instanceId,
+        components: [],
+        pluginGroups: [],
+        projectGroups,
+        totalCount: 0,
       });
     }
   }
@@ -198,6 +208,15 @@ export function useComponents() {
     [filteredComponents, detectedTools],
   );
 
+  // Extract project groups as top-level peers of tools (UX-01)
+  const projectGroups = useMemo(() => {
+    const allProjects: ProjectGroup[] = [];
+    for (const group of toolGroups) {
+      if (group.projectGroups) allProjects.push(...group.projectGroups);
+    }
+    return allProjects;
+  }, [toolGroups]);
+
   const typeCounts = useMemo(() => countByType(components), [components]);
   const toolCounts = useMemo(() => countByTool(components), [components]);
 
@@ -211,6 +230,7 @@ export function useComponents() {
     detectedTools,
     filteredComponents,
     toolGroups,
+    projectGroups,
     typeCounts,
     toolCounts,
     activeTypes,

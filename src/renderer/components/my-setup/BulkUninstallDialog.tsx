@@ -58,11 +58,7 @@ export function BulkUninstallDialog({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/20"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 z-50 bg-black/20" onClick={onCancel} aria-hidden="true" />
 
       {/* Dialog */}
       <div
@@ -73,11 +69,8 @@ export function BulkUninstallDialog({
         aria-describedby="bulk-uninstall-description"
       >
         <div className="bg-sand-paper rounded-xl shadow-xl border border-sand-border p-6 max-w-md w-full animate-bounce-in">
-          <h2
-            id="bulk-uninstall-title"
-            className="text-lg font-semibold text-sand-text mb-3"
-          >
-            Uninstall {count} component{count !== 1 ? 's' : ''}?
+          <h2 id="bulk-uninstall-title" className="text-lg font-semibold text-sand-text mb-3">
+            Uninstall {count} plugin{count !== 1 ? 's' : ''}?
           </h2>
 
           <p className="text-sm text-sand-secondary mb-3">This will remove:</p>
@@ -99,17 +92,15 @@ export function BulkUninstallDialog({
             ))}
           </div>
 
-          <p className="text-xs text-accent-destructive mb-5">
-            This action cannot be undone.
-          </p>
+          <p className="text-xs text-accent-destructive mb-5">This action cannot be undone.</p>
 
           <div className="flex gap-3 justify-end">
             <Button variant="outline" size="sm" onClick={onCancel}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
               size="sm"
+              className="bg-accent-destructive text-white hover:bg-accent-destructive/90"
               onClick={() => onConfirm(componentIds)}
               autoFocus
             >

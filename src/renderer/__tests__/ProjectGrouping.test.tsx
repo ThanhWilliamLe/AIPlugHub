@@ -91,12 +91,20 @@ describe('useComponents project grouping', () => {
     expect(ccGroup.components[0].id.name).toBe('sqlite');
   });
 
-  it('includes project components in totalCount', () => {
+  it('excludes project components from tool totalCount (shown as top-level sections)', () => {
     const { result } = renderHook(() => useComponents());
     const ccGroup = result.current.toolGroups.find((g) => g.toolId === 'claude-code')!;
 
-    // 1 user + 3 project + 1 plugin = 5
-    expect(ccGroup.totalCount).toBe(5);
+    // 1 user + 1 plugin = 2 (project components are separate top-level sections)
+    expect(ccGroup.totalCount).toBe(2);
+  });
+
+  it('exposes projectGroups at top level for rendering as siblings of tools', () => {
+    const { result } = renderHook(() => useComponents());
+    expect(result.current.projectGroups.length).toBeGreaterThan(0);
+    const myApp = result.current.projectGroups.find((g) => g.projectName === 'my-app');
+    expect(myApp).toBeDefined();
+    expect(myApp!.components).toHaveLength(2);
   });
 
   it('keeps plugin groups separate from project groups', () => {

@@ -102,7 +102,7 @@ export function deserializeBundle(json: string): Bundle {
   return parsed as Bundle;
 }
 
-function validatePortableComponent(c: Record<string, unknown>): void {
+export function validatePortableComponent(c: Record<string, unknown>): void {
   if (typeof c.type !== 'string' || !ALL_COMPONENT_TYPES.includes(c.type as ComponentType)) {
     throw new AppError('BUNDLE_INVALID', `Invalid component type: ${String(c.type)}`, false);
   }
@@ -116,6 +116,14 @@ function validatePortableComponent(c: Record<string, unknown>): void {
   const FORBIDDEN_NAMES = ['__proto__', 'constructor', 'prototype'];
   if (FORBIDDEN_NAMES.includes(c.name as string)) {
     throw new AppError('BUNDLE_INVALID', `Forbidden component name: ${c.name}`, false);
+  }
+  // Reject path traversal vectors.
+  // Note: "/" is allowed because plugin-scoped names use it as a separator
+  // (e.g., "code-review@marketplace/code-review"). The import handler strips
+  // the prefix before writing to disk.
+  const name = c.name as string;
+  if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
+    throw new AppError('BUNDLE_INVALID', `Component name contains path traversal characters: ${name}`, false);
   }
 }
 

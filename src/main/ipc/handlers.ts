@@ -11,6 +11,7 @@ import type { SecretStore } from '../secret-store';
 import type { MarketplaceClient } from '../marketplace/marketplace-client';
 import type { Logger } from '../logger';
 import type { BackupManager } from '../backup';
+import { assertWriteAllowed } from '../write-guard';
 import type {
   IpcResult,
   IpcError,
@@ -41,7 +42,7 @@ import type {
   RestoreResult,
 } from '@shared/types';
 import { AppError } from '@shared/types';
-import { componentIdKey } from '@shared/utils';
+import { componentIdKey, normalizeSourceUrl } from '@shared/utils';
 import { MAX_PROJECT_FOLDERS } from '@shared/constants';
 import { withAdapterLock } from './operation-lock';
 import { serializeBundle, deserializeBundle, detectConflicts, buildBundle } from '../bundle';
@@ -394,6 +395,24 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
     },
   );
 
+  // --- system:openUrl ---
+  ipcMain.handle(
+    'system:openUrl',
+    async (_event, url: string): Promise<IpcResult<void>> => {
+      try {
+        const parsed = new URL(url);
+        if (!['https:', 'mailto:'].includes(parsed.protocol)) {
+          throw new AppError('CONFIG_PERMISSION', 'Only https: and mailto: URLs are allowed', false);
+        }
+        await shell.openExternal(url);
+        return ok(undefined);
+      } catch (err) {
+        logger.error(MODULE, 'system:openUrl failed', err as Error);
+        return fail(err);
+      }
+    },
+  );
+
   // --- system:getAppVersion ---
   ipcMain.handle('system:getAppVersion', (): IpcResult<string> => {
     try {
@@ -644,6 +663,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
 
         if (result.canceled || !result.filePath) return ok(null);
 
+        assertWriteAllowed(result.filePath);
         const fs = await import('fs/promises');
         await fs.writeFile(result.filePath, json, 'utf-8');
 
@@ -746,11 +766,14 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
     'settings:addSource',
     async (_event, config: NewSourceConfig): Promise<IpcResult<MarketplaceSourceConfig>> => {
       try {
-        logger.info(MODULE, `settings:addSource ${config.url}`);
+        // Normalize short-form inputs (owner/repo, github.com/..., git@, .git suffix)
+        const normalized = { ...config, url: normalizeSourceUrl(config.url) };
+
+        logger.info(MODULE, `settings:addSource ${normalized.url}`);
 
         // Validate URL scheme — only HTTPS allowed
         try {
-          const parsed = new URL(config.url);
+          const parsed = new URL(normalized.url);
           if (parsed.protocol !== 'https:') {
             throw new AppError('VALIDATION_ERROR', 'Source URL must use HTTPS', false);
           }
@@ -759,7 +782,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
           throw new AppError('VALIDATION_ERROR', 'Invalid source URL', false);
         }
 
-        const source = await marketplace.addSource(config);
+        const source = await marketplace.addSource(normalized);
         return ok(source);
       } catch (err) {
         logger.error(MODULE, 'settings:addSource failed', err as Error);
@@ -1137,11 +1160,16 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
 
   // ─── Plugin Operations ─────────────────────────────────────────────
 
+  interface PluginAdapter {
+    togglePlugin(key: string, enabled: boolean): Promise<void>;
+    uninstallPlugin(key: string): Promise<void>;
+  }
+
   // --- plugins:list ---
-  ipcMain.handle('plugins:list', async (): Promise<IpcResult<NativePlugin[]>> => {
+  ipcMain.handle('plugins:list', async (_event, instanceId: string = 'claude-code-default'): Promise<IpcResult<NativePlugin[]>> => {
     try {
       logger.info(MODULE, 'plugins:list');
-      const adapter = registry.getAdapter('claude-code-default');
+      const adapter = registry.getAdapter(instanceId);
       const components = await adapter.scan();
       const pluginComponents = components.filter((c) => c.id.scope === 'plugin');
 
@@ -1187,14 +1215,12 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
   // --- plugins:toggle ---
   ipcMain.handle(
     'plugins:toggle',
-    async (_event, pluginKey: string, enabled: boolean): Promise<IpcResult<void>> => {
+    async (_event, pluginKey: string, enabled: boolean, instanceId: string = 'claude-code-default'): Promise<IpcResult<void>> => {
       try {
         logger.info(MODULE, `plugins:toggle ${pluginKey} → ${enabled}`);
-        const adapter = registry.getAdapter('claude-code-default');
+        const adapter = registry.getAdapter(instanceId);
         // Use the extended method — cast since registry returns ToolAdapter
-        const extended = adapter as unknown as {
-          togglePlugin(k: string, e: boolean): Promise<void>;
-        };
+        const extended = adapter as unknown as PluginAdapter;
         if (!extended.togglePlugin) {
           throw new AppError(
             'ADAPTER_UNSUPPORTED',
@@ -1202,7 +1228,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
             false,
           );
         }
-        await withAdapterLock('claude-code-default', () =>
+        await withAdapterLock(instanceId, () =>
           extended.togglePlugin(pluginKey, enabled),
         );
         return ok(undefined);
@@ -1216,13 +1242,11 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
   // --- plugins:uninstall ---
   ipcMain.handle(
     'plugins:uninstall',
-    async (_event, pluginKey: string): Promise<IpcResult<void>> => {
+    async (_event, pluginKey: string, instanceId: string = 'claude-code-default'): Promise<IpcResult<void>> => {
       try {
         logger.info(MODULE, `plugins:uninstall ${pluginKey}`);
-        const adapter = registry.getAdapter('claude-code-default');
-        const extended = adapter as unknown as {
-          uninstallPlugin(k: string): Promise<void>;
-        };
+        const adapter = registry.getAdapter(instanceId);
+        const extended = adapter as unknown as PluginAdapter;
         if (!extended.uninstallPlugin) {
           throw new AppError(
             'ADAPTER_UNSUPPORTED',
@@ -1230,7 +1254,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
             false,
           );
         }
-        await withAdapterLock('claude-code-default', () => extended.uninstallPlugin(pluginKey));
+        await withAdapterLock(instanceId, () => extended.uninstallPlugin(pluginKey));
         return ok(undefined);
       } catch (err) {
         logger.error(MODULE, 'plugins:uninstall failed', err as Error);

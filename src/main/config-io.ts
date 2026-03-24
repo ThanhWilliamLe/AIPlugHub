@@ -30,6 +30,7 @@ import * as yaml from 'js-yaml';
 import { parse as parseJSONC, type ParseError } from 'jsonc-parser';
 import type { Logger } from './logger';
 import { AppError } from '@shared/types';
+import { assertWriteAllowed } from './write-guard';
 
 export interface ConfigIO {
   readJSON(path: string): Promise<unknown>;
@@ -113,6 +114,7 @@ export function createConfigIO(logger: Logger): ConfigIO {
    * Ensures hash matches what was actually backed up.
    */
   async function backupAndWriteAtomic(targetPath: string, content: string): Promise<void> {
+    assertWriteAllowed(targetPath);
     const backupPath = targetPath + '.backup';
     let previousHash: string | undefined;
 

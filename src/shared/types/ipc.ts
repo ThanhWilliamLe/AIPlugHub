@@ -83,4 +83,6 @@ export type UserPreferences = {
   lastUpdateCheck?: string;
   /** Registered project folders for project-scope scanning (USR-03) */
   projectFolders?: ProjectFolder[];
+  /** Last-selected install target in Browse tab (reuses BrowseInstallTarget shape) */
+  browseInstallTarget?: import('./marketplace').BrowseInstallTarget;
 };

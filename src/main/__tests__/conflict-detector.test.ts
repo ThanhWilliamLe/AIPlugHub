@@ -322,4 +322,23 @@ describe('detectConflicts', () => {
     expect(result.conflicts).toHaveLength(1);
     expect(result.conflicts[0].conflictType).toBe('identical');
   });
+
+  it('classifies as identical when ALL env vars are sensitive (empty env vs no env)', () => {
+    // Export strips all sensitive vars → env becomes undefined (absent in JSON).
+    // Existing has env with only sensitive vars → stripSensitiveEnv produces empty {}.
+    // Both sides should be considered identical.
+    const incoming = [
+      makePortable({
+        core: { transport: 'stdio', command: 'sqlite' }, // no env key at all
+      }),
+    ];
+    const existing = [
+      makeExisting({
+        core: { transport: 'stdio', command: 'sqlite', env: { API_KEY: 'secret-123', TOKEN: 'sk-live-xyz' } },
+      }),
+    ];
+    const result = detectConflicts(incoming, existing, DETECTED_TOOLS);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0].conflictType).toBe('identical');
+  });
 });

@@ -16,19 +16,23 @@ export function TransferTab() {
 
   const handleImport = useCallback(async () => {
     startImport();
+    let filePath: string | null = null;
     try {
-      const filePath = await window.aiplughub.system.openFileDialog({
+      filePath = await window.aiplughub.system.openFileDialog({
         title: 'Open a bundle file',
         filters: [{ name: 'AI Bundle', extensions: ['aibundle', 'json'] }],
       });
-      if (!filePath) {
-        useWizardStore.getState().closeWizard();
-        return;
-      }
-      await loadBundle(filePath);
     } catch {
+      // Dialog itself failed — close wizard silently
       useWizardStore.getState().closeWizard();
+      return;
     }
+    if (!filePath) {
+      useWizardStore.getState().closeWizard();
+      return;
+    }
+    // loadBundle handles its own errors (sets wizard error state)
+    await loadBundle(filePath);
   }, [startImport, loadBundle]);
 
   return (

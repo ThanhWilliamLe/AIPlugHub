@@ -36,7 +36,7 @@ describe('UninstallDialog', () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.getByText(/This will remove the component/)).toBeInTheDocument();
+    expect(screen.getByText(/This will remove the plugin/)).toBeInTheDocument();
     expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
   });
 

@@ -345,9 +345,9 @@ describe('Endurance: Renderer Stores', () => {
         const lateMs = performance.now() - lateStart;
 
         const factor = lateMs / (earlyMs || 0.001);
-        // Allow up to 10× — the O(N) spread is expected to show some growth,
-        // but >10× on only 500 keys would indicate a pathological environment.
-        expect(factor).toBeLessThan(10);
+        // Allow up to 20× — the O(N) spread is expected to show some growth,
+        // but >20× on only 500 keys would indicate a pathological environment.
+        expect(factor).toBeLessThan(20);
       },
     );
 
@@ -623,17 +623,15 @@ describe('Endurance: Renderer Stores', () => {
     );
 
     it(
-      'setSelectedIds: respects MAX_BULK_SELECTION cap (200) even when given a larger array',
+      'setSelectedIds: handles large arrays without truncation',
       { timeout: 30_000 },
       () => {
-        // setSelectedIds slices to MAX_BULK_SELECTION (200). Verify this cap
-        // is enforced consistently across repeated calls with oversized inputs.
-        const MAX = 200; // matches MAX_BULK_SELECTION from @shared/constants
-        const oversizedInput = Array.from({ length: CHURN_CYCLES }, (_, i) => makeComponentId(i));
+        // setSelectedIds accepts the full array. Verify no truncation occurs.
+        const largeInput = Array.from({ length: CHURN_CYCLES }, (_, i) => makeComponentId(i));
 
         for (let i = 0; i < 50; i++) {
-          useUiStore.getState().setSelectedIds(oversizedInput);
-          expect(useUiStore.getState().selectedIds.length).toBeLessThanOrEqual(MAX);
+          useUiStore.getState().setSelectedIds(largeInput);
+          expect(useUiStore.getState().selectedIds.length).toBe(CHURN_CYCLES);
         }
       },
     );

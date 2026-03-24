@@ -2436,7 +2436,7 @@ describe('handler registration', () => {
 
   it('registers exactly the expected number of channels', () => {
     const registeredChannels = mockIpcMain.handle.mock.calls.map((c: unknown[]) => c[0]);
-    expect(registeredChannels).toHaveLength(45);
+    expect(registeredChannels).toHaveLength(46);
   });
 });
 

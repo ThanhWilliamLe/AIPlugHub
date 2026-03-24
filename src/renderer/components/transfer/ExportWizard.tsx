@@ -2,7 +2,7 @@
  * Export wizard — 3-step modal: Select → Review → Save confirmation.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToolStore } from '@renderer/stores/tool-store';
 import { useWizardStore } from '@renderer/stores/wizard-store';
 import { TOOL_META, COMPONENT_TYPE_META, PLUGIN_GROUP_META } from '@shared/constants';
@@ -18,11 +18,11 @@ export function ExportWizard() {
     exportStep,
     selectedIds,
     exportOptions,
+    savedFilePath,
     loading,
     setExportStep,
     toggleSelectId,
     selectAll,
-    deselectAll,
     setExportOptions,
     buildAndSave,
     closeWizard,
@@ -31,11 +31,42 @@ export function ExportWizard() {
 
   const detectedTools = useMemo(() => tools.filter((t) => t.detected), [tools]);
   const [exportSearch, setExportSearch] = useState('');
+  const [exportTypeFilters, setExportTypeFilters] = useState<Set<string>>(new Set());
 
-  // Filter + group components by tool for the checklist, with plugin sub-grouping
-  const toolGroups = useMemo(() => {
+  const toggleExportTypeFilter = (type: string) => {
+    setExportTypeFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  };
+
+  // Distinct component types present in the data (for filter pills)
+  const availableTypes = useMemo(() => {
+    const types = new Map<string, number>();
+    for (const c of components) {
+      types.set(c.id.type, (types.get(c.id.type) ?? 0) + 1);
+    }
+    return types;
+  }, [components]);
+
+  type ToolGroup = {
+    toolId: ToolId;
+    plugins: { pluginKey: string; components: Component[] }[];
+    standalone: Component[];
+  };
+  type ProjectGroup = {
+    projectPath: string;
+    projectName: string;
+    components: Component[];
+  };
+
+  // Filter + group components by tool and project for the checklist
+  const { toolGroups, projectGroups: exportProjectGroups } = useMemo(() => {
     const q = exportSearch.toLowerCase().trim();
-    const groups: { toolId: ToolId; plugins: { pluginKey: string; components: Component[] }[]; standalone: Component[] }[] = [];
+    const groups: ToolGroup[] = [];
+    const projects = new Map<string, Component[]>();
 
     for (const tool of detectedTools) {
       let toolComps = components.filter((c) => c.id.tool === tool.toolId);
@@ -47,9 +78,20 @@ export function ExportWizard() {
             (c.extensions?.pluginKey as string)?.toLowerCase().includes(q),
         );
       }
+      if (exportTypeFilters.size > 0) {
+        toolComps = toolComps.filter((c) => exportTypeFilters.has(c.id.type));
+      }
 
-      const standalone = toolComps.filter((c) => c.id.scope !== 'plugin');
+      const standalone = toolComps.filter((c) => c.id.scope !== 'plugin' && c.id.scope !== 'project');
       const pluginComps = toolComps.filter((c) => c.id.scope === 'plugin');
+      const projectComps = toolComps.filter((c) => c.id.scope === 'project');
+
+      // Collect project components across tools
+      for (const c of projectComps) {
+        const key = c.projectPath ?? 'unknown';
+        if (!projects.has(key)) projects.set(key, []);
+        projects.get(key)!.push(c);
+      }
 
       // Group plugin components by pluginKey
       const pluginMap = new Map<string, Component[]>();
@@ -67,22 +109,33 @@ export function ExportWizard() {
         groups.push({ toolId: tool.toolId, plugins, standalone });
       }
     }
-    return groups;
-  }, [components, detectedTools, exportSearch]);
+
+    const projectGroups: ProjectGroup[] = Array.from(projects.entries())
+      .map(([path, comps]) => {
+        const segments = path.replace(/[\\/]+$/, '').split(/[\\/]/);
+        return { projectPath: path, projectName: segments[segments.length - 1] || path, components: comps };
+      })
+      .sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+    return { toolGroups: groups, projectGroups };
+  }, [components, detectedTools, exportSearch, exportTypeFilters]);
 
   const isSelected = (id: ComponentId) => selectedIds.some((s) => componentIdEquals(s, id));
 
   // Fix L2: "Select all" operates on filtered results when search is active
   const allIds = components.map((c) => c.id);
   const filteredIds = useMemo(
-    () =>
-      toolGroups.flatMap((g) => [
+    () => [
+      ...toolGroups.flatMap((g) => [
         ...g.standalone.map((c) => c.id),
         ...g.plugins.flatMap((p) => p.components.map((c) => c.id)),
       ]),
-    [toolGroups],
+      ...exportProjectGroups.flatMap((g) => g.components.map((c) => c.id)),
+    ],
+    [toolGroups, exportProjectGroups],
   );
-  const effectiveIds = exportSearch.trim() ? filteredIds : allIds;
+  const isFiltering = exportSearch.trim().length > 0 || exportTypeFilters.size > 0;
+  const effectiveIds = isFiltering ? filteredIds : allIds;
   const allSelected =
     effectiveIds.length > 0 && effectiveIds.every((id) => isSelected(id));
 
@@ -138,10 +191,18 @@ export function ExportWizard() {
     return warnings;
   }, [selectedComponents]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeWizard();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [closeWizard]);
+
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-50 bg-black/20" aria-hidden="true" />
+      <div className="fixed inset-0 z-50 bg-black/20" onClick={closeWizard} aria-hidden="true" />
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -155,6 +216,7 @@ export function ExportWizard() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-sand-border">
             <div>
               <h2 className="text-lg font-semibold text-sand-text">Export Bundle</h2>
+              <p className="text-xs text-sand-muted">Save your plugins to a file you can share or use as backup</p>
               <div className="flex gap-2 mt-1">
                 {[1, 2, 3].map((s) => (
                   <span
@@ -189,15 +251,44 @@ export function ExportWizard() {
               <div className="space-y-4">
                 <input
                   type="search"
-                  placeholder="Search components..."
+                  placeholder="Search plugins..."
                   value={exportSearch}
                   onChange={(e) => setExportSearch(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-sand-surface/50 border border-sand-border text-sm focus:outline-none focus:ring-2 focus:ring-accent-olive/40"
-                  aria-label="Search components for export"
+                  aria-label="Search plugins for export"
                 />
+                {/* Type filter pills */}
+                {availableTypes.size > 1 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(availableTypes.entries()).map(([type, count]) => (
+                      <button
+                        key={type}
+                        type="button"
+                        title={COMPONENT_TYPE_META[type]?.tooltip}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          exportTypeFilters.has(type)
+                            ? 'bg-accent-olive/15 border-accent-olive text-accent-olive'
+                            : 'border-sand-border text-sand-secondary hover:bg-sand-surface/60'
+                        }`}
+                        onClick={() => toggleExportTypeFilter(type)}
+                      >
+                        {COMPONENT_TYPE_META[type]?.label ?? type} ({count})
+                      </button>
+                    ))}
+                    {exportTypeFilters.size > 0 && (
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 text-sand-muted hover:text-sand-text"
+                        onClick={() => setExportTypeFilters(new Set())}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-sand-secondary">
-                    {selectedIds.length} of {components.length} selected
+                    {selectedIds.length} of {isFiltering ? `${effectiveIds.length} visible` : components.length} plugins selected
                   </span>
                   <button
                     type="button"
@@ -220,7 +311,9 @@ export function ExportWizard() {
                       }
                     }}
                   >
-                    {allSelected ? 'Deselect all' : 'Select all'}
+                    {allSelected
+                      ? isFiltering ? 'Deselect all visible' : 'Deselect all'
+                      : isFiltering ? 'Select all visible' : 'Select all'}
                   </button>
                 </div>
 
@@ -355,6 +448,59 @@ export function ExportWizard() {
                     </div>
                   );
                 })}
+
+                {/* Project folder groups — top-level peers of tools */}
+                {exportProjectGroups.map((group) => {
+                  const projIds = group.components.map((c) => c.id);
+                  const projSelected = projIds.filter((id) => isSelected(id)).length;
+                  const allProjSelected = projSelected === projIds.length && projIds.length > 0;
+
+                  return (
+                    <div key={group.projectPath}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <button
+                          type="button"
+                          className="text-xs text-accent-olive hover:underline"
+                          onClick={() => {
+                            if (allProjSelected) {
+                              for (const id of projIds) {
+                                if (isSelected(id)) toggleSelectId(id);
+                              }
+                            } else {
+                              for (const id of projIds) {
+                                if (!isSelected(id)) toggleSelectId(id);
+                              }
+                            }
+                          }}
+                        >
+                          {allProjSelected ? 'Deselect' : 'Select all'}
+                        </button>
+                        <span className="text-sm font-medium">
+                          {'\u{1F4C1}'} {group.projectName} ({projSelected}/{projIds.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1 ml-4">
+                        {group.components.map((c) => (
+                          <label
+                            key={componentIdKey(c.id)}
+                            className="flex items-center gap-2 py-1 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected(c.id)}
+                              onChange={() => toggleSelectId(c.id)}
+                              className="rounded border-sand-border accent-accent-olive"
+                            />
+                            <span className="font-mono text-sm truncate">
+                              {c.displayName ?? c.id.name}
+                            </span>
+                            <TypeBadge type={c.id.type} />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -362,14 +508,21 @@ export function ExportWizard() {
             {exportStep === 2 && (
               <div className="space-y-4">
                 <p className="text-sm text-sand-secondary">
-                  {selectedIds.length} component{selectedIds.length !== 1 ? 's' : ''} will be
-                  exported
+                  {selectedIds.length} plugin{selectedIds.length !== 1 ? 's' : ''} will be exported
                 </p>
+                {(() => {
+                  const targetTools = [...new Set(selectedComponents.map((c) => TOOL_META[c.id.tool]?.label ?? c.id.tool))];
+                  return targetTools.length > 1 ? (
+                    <p className="text-xs text-sand-muted">
+                      Targets: {targetTools.join(', ')}
+                    </p>
+                  ) : null;
+                })()}
 
                 {secretCount > 0 && (
                   <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                    {'\u{1F512}'} {secretCount} secret value{secretCount !== 1 ? 's' : ''} will not
-                    be included. Recipients will be prompted.
+                    {'\u{1F512}'} {secretCount} password{secretCount !== 1 ? 's' : ''}/API key{secretCount !== 1 ? 's' : ''} will NOT be included for security.
+                    Anyone who imports this file will need to enter their own.
                   </div>
                 )}
 
@@ -401,6 +554,21 @@ export function ExportWizard() {
                   ))}
                 </div>
 
+                {/* Bundle name */}
+                <div>
+                  <label className="block text-xs font-medium text-sand-secondary mb-1">
+                    Bundle name
+                  </label>
+                  <input
+                    type="text"
+                    value={exportOptions.name ?? ''}
+                    onChange={(e) => setExportOptions({ name: e.target.value })}
+                    placeholder="e.g., Team Onboarding Setup"
+                    className="w-full px-3 py-2 rounded-lg bg-sand-surface/50 border border-sand-border text-sm focus:outline-none focus:ring-2 focus:ring-accent-olive/40"
+                    aria-label="Bundle name"
+                  />
+                </div>
+
                 {/* Description field */}
                 <div>
                   <label className="block text-xs font-medium text-sand-secondary mb-1">
@@ -422,8 +590,13 @@ export function ExportWizard() {
                 <p className="text-2xl mb-2">{'\u2705'}</p>
                 <h3 className="text-lg font-semibold text-sand-text mb-2">Export complete!</h3>
                 <p className="text-sm text-sand-secondary">
-                  Your bundle has been saved. Share it with a teammate or use it on another machine.
+                  Your bundle has been saved. Share it with a teammate or use it on another computer.
                 </p>
+                {savedFilePath && (
+                  <p className="text-xs text-sand-muted font-mono mt-3 px-4 truncate" title={savedFilePath}>
+                    {savedFilePath}
+                  </p>
+                )}
               </div>
             )}
           </div>

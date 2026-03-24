@@ -61,7 +61,7 @@ export const BrowseResultCard = React.memo(function BrowseResultCard({
       </div>
 
       {/* Description */}
-      <p className="text-xs text-sand-secondary mt-1 line-clamp-2">{entry.description}</p>
+      <p className="text-xs text-sand-secondary mt-1 line-clamp-3">{entry.description}</p>
 
       {/* Footer: badges + author */}
       <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -84,7 +84,7 @@ export const BrowseResultCard = React.memo(function BrowseResultCard({
 
         {/* Source tag */}
         <span className="text-xs text-sand-muted font-mono">
-          @{entry.sourceId.replace(/^native-/, '')}
+          @{entry.sourceId}
         </span>
 
         {/* Star badge (USR-09) */}

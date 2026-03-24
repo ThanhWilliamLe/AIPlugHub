@@ -4,7 +4,7 @@
  */
 
 import * as fsPromises from 'fs/promises';
-import { mkdir, readdir, readFile, writeFile, rm, access, constants } from 'fs/promises';
+import { mkdir, readdir, readFile, writeFile, rm, access, constants, lstat } from 'fs/promises';
 import { join, dirname, basename, relative } from 'path';
 import { minimatch } from 'minimatch';
 import { withAdapterLock } from '../ipc/operation-lock';
@@ -23,6 +23,7 @@ import type {
 import { AppError } from '@shared/types';
 import type { AdapterRegistry } from '../adapters/adapter-registry';
 import { createLogger } from '../logger';
+import { assertWriteAllowed } from '../write-guard';
 
 const logger = createLogger();
 const MODULE = 'BackupManager';
@@ -173,6 +174,7 @@ export class BackupManager {
     }
 
     const backupPath = await this.getBackupPath(configPath, options?.label);
+    assertWriteAllowed(backupPath);
     const excludePatterns = options?.skipCaches ? adapter.getCachePatterns() : [];
 
     const files: string[] = [];
@@ -330,6 +332,12 @@ export class BackupManager {
           if (entry.name === BACKUP_MANIFEST_FILENAME) continue;
           const src = join(backupPath, entry.name);
           const dest = join(configPath, entry.name);
+          // Skip symlinks for security
+          const stat = await lstat(src);
+          if (stat.isSymbolicLink()) {
+            logger.warn(MODULE, `Skipping symlink in backup: ${entry.name}`);
+            continue;
+          }
           await fsPromises.cp(src, dest, { recursive: true });
         }
       } catch (err) {
@@ -348,8 +356,15 @@ export class BackupManager {
           const rollbackEntries = await readdir(autoBackup.backupPath, { withFileTypes: true });
           for (const entry of rollbackEntries) {
             if (entry.name === BACKUP_MANIFEST_FILENAME) continue;
+            const rollbackSrc = join(autoBackup.backupPath, entry.name);
+            // Skip symlinks in rollback path too
+            const rollbackStat = await lstat(rollbackSrc);
+            if (rollbackStat.isSymbolicLink()) {
+              logger.warn(MODULE, `Skipping symlink in rollback: ${entry.name}`);
+              continue;
+            }
             await fsPromises.cp(
-              join(autoBackup.backupPath, entry.name),
+              rollbackSrc,
               join(configPath, entry.name),
               {
                 recursive: true,
