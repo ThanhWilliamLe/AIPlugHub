@@ -25,7 +25,7 @@ export function ToastContainer() {
           )}
           role="status"
         >
-          <span className="flex-1">{toast.message}</span>
+          <span className="flex-1 whitespace-pre-line max-h-40 overflow-y-auto">{toast.message}</span>
           {toast.undoAction && (
             <button
               type="button"

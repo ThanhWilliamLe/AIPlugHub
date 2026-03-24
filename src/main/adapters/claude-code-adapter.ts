@@ -1017,6 +1017,15 @@ export function createClaudeCodeAdapter(
     async uninstall(id) {
       logger.info(MODULE, `Uninstalling ${id.type} "${id.name}"`);
 
+      // Plugin sub-components cannot be uninstalled individually — use plugins:uninstall
+      if (id.scope === 'plugin') {
+        throw new AppError(
+          'ADAPTER_UNSUPPORTED',
+          `Plugin sub-components cannot be uninstalled individually. Use plugin uninstall for the parent plugin.`,
+          false,
+        );
+      }
+
       switch (id.type) {
         case 'mcp-server':
           return uninstallMcpServer(id);

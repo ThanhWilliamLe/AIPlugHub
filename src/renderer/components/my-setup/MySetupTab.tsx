@@ -227,15 +227,58 @@ export function MySetupTab() {
     setShowBulkUninstall(selectedIds);
   }, [selectedIds]);
 
+  const uninstallPlugin = useToolStore((s) => s.uninstallPlugin);
+
   const handleConfirmBulkUninstall = useCallback(
     async (ids: ComponentId[]) => {
+      const errors: string[] = [];
+
+      // Group plugin-scope items by pluginKey — uninstall whole plugin instead of sub-components
+      const pluginKeys = new Set<string>();
+      const standaloneIds: ComponentId[] = [];
+
       for (const id of ids) {
-        await uninstallComponent(id);
+        if (id.scope === 'plugin') {
+          const comp = components.find((c) => componentIdEquals(c.id, id));
+          const pk = comp?.extensions?.pluginKey;
+          if (pk && !pluginKeys.has(pk)) {
+            pluginKeys.add(pk);
+          }
+        } else {
+          standaloneIds.push(id);
+        }
       }
+
+      // Uninstall whole plugins
+      for (const pk of pluginKeys) {
+        try {
+          await uninstallPlugin(pk);
+        } catch (err) {
+          errors.push(`Plugin ${pk}: ${(err as Error).message}`);
+        }
+      }
+
+      // Uninstall standalone components
+      for (const id of standaloneIds) {
+        try {
+          await uninstallComponent(id);
+        } catch (err) {
+          errors.push(`${id.name}: ${(err as Error).message}`);
+        }
+      }
+
+      if (errors.length > 0) {
+        addToast({
+          message: `${errors.length} error${errors.length > 1 ? 's' : ''} during uninstall:\n${errors.join('\n')}`,
+          type: 'error',
+          duration: 10000,
+        });
+      }
+
       setShowBulkUninstall(null);
       exitSelectionMode();
     },
-    [uninstallComponent, exitSelectionMode],
+    [components, uninstallComponent, uninstallPlugin, exitSelectionMode, addToast],
   );
 
   // Empty state: no tools detected
