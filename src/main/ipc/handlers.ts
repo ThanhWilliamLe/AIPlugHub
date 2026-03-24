@@ -396,22 +396,19 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
   );
 
   // --- system:openUrl ---
-  ipcMain.handle(
-    'system:openUrl',
-    async (_event, url: string): Promise<IpcResult<void>> => {
-      try {
-        const parsed = new URL(url);
-        if (!['https:', 'mailto:'].includes(parsed.protocol)) {
-          throw new AppError('CONFIG_PERMISSION', 'Only https: and mailto: URLs are allowed', false);
-        }
-        await shell.openExternal(url);
-        return ok(undefined);
-      } catch (err) {
-        logger.error(MODULE, 'system:openUrl failed', err as Error);
-        return fail(err);
+  ipcMain.handle('system:openUrl', async (_event, url: string): Promise<IpcResult<void>> => {
+    try {
+      const parsed = new URL(url);
+      if (!['https:', 'mailto:'].includes(parsed.protocol)) {
+        throw new AppError('CONFIG_PERMISSION', 'Only https: and mailto: URLs are allowed', false);
       }
-    },
-  );
+      await shell.openExternal(url);
+      return ok(undefined);
+    } catch (err) {
+      logger.error(MODULE, 'system:openUrl failed', err as Error);
+      return fail(err);
+    }
+  });
 
   // --- system:getAppVersion ---
   ipcMain.handle('system:getAppVersion', (): IpcResult<string> => {
@@ -530,24 +527,109 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
       event,
       components: PortableComponent[],
       resolutions: ConflictResolution[],
+      plugins?: import('@shared/types').PortablePlugin[],
     ): Promise<IpcResult<ImportResult>> => {
       try {
-        logger.info(MODULE, `bundles:import ${components.length} components`);
+        const pluginList = plugins ?? [];
+        const totalItems = components.length + pluginList.length;
+        logger.info(
+          MODULE,
+          `bundles:import ${components.length} components + ${pluginList.length} plugins`,
+        );
         const sender = event.sender;
         const installed: Component[] = [];
         const skipped: ImportResult['skipped'] = [];
         const failed: ImportResult['failed'] = [];
 
         const instances = await dataStore.getToolInstances();
+        let progressIdx = 0;
 
+        // R3: Create ONE backup before the import loop (batch context)
+        if (totalItems > 0) {
+          for (const instance of instances) {
+            try {
+              await backupManager.create(instance.instanceId, {
+                label: 'pre-import',
+                auto: true,
+              });
+            } catch (err) {
+              logger.warn(MODULE, `Pre-import backup failed for ${instance.instanceId}`, err);
+            }
+          }
+        }
+
+        // Phase 1: Install plugins (R2 — full plugin structure restoration)
+        for (const plugin of pluginList) {
+          progressIdx++;
+          if (!sender.isDestroyed()) {
+            sender.send('progress:import', {
+              current: progressIdx,
+              total: totalItems,
+              componentName: plugin.pluginName ?? plugin.pluginKey,
+              status: 'installing',
+            } satisfies ImportProgressEvent);
+          }
+
+          // Find target tool instance (plugins are Claude Code specific for now)
+          const instance = instances.find((t) => t.toolId === 'claude-code') ?? instances[0];
+          if (!instance) {
+            // Create a synthetic portable for failure reporting
+            const synth: PortableComponent = {
+              type: 'unknown',
+              name: plugin.pluginKey,
+              core: { rawConfig: {}, rawTypeName: 'plugin' },
+            };
+            failed.push({
+              component: synth,
+              error: {
+                code: 'TOOL_NOT_FOUND',
+                message: 'No tool instance found for plugin install',
+                recoverable: true,
+              },
+            });
+            continue;
+          }
+
+          try {
+            const result = await withAdapterLock(instance.instanceId, async () => {
+              const adapter = registry.getAdapter(instance.instanceId);
+              if (adapter.installPlugin) {
+                return adapter.installPlugin(plugin);
+              }
+              throw new AppError(
+                'ADAPTER_UNSUPPORTED',
+                `Adapter ${adapter.toolId} does not support plugin install`,
+                false,
+              );
+            });
+
+            for (const comp of result) {
+              await dataStore.setComponentMeta(comp.id, {
+                tracking: 'imported',
+                displayName: comp.description,
+              });
+            }
+            installed.push(...result);
+          } catch (err) {
+            const synth: PortableComponent = {
+              type: 'unknown',
+              name: plugin.pluginKey,
+              core: { rawConfig: {}, rawTypeName: 'plugin' },
+            };
+            failed.push({ component: synth, error: toIpcError(err) });
+          }
+        }
+
+        // Phase 2: Install standalone components (existing logic)
         for (let i = 0; i < components.length; i++) {
           let portable = components[i];
+          progressIdx++;
 
           // Send progress
           if (!sender.isDestroyed()) {
             const progressEvent: ImportProgressEvent = {
-              current: i + 1,
-              total: components.length,
+              current: progressIdx,
+              total: totalItems,
               componentName: portable.name,
               status: 'installing',
             };
@@ -574,13 +656,16 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
             continue;
           }
 
-          // Strip plugin prefix from name for standalone installation.
-          // Plugin-scoped names like "superpowers@marketplace/brainstorming"
-          // use "/" as a separator — extract the leaf component name so the
-          // install function can create a valid file on disk.
+          // Plugin-scoped components: strip the plugin prefix from the name
+          // and force user scope. Plugin scope only works with the native plugin
+          // system (installed_plugins.json) — importing as standalone installs
+          // the component as a regular user-scope item.
           if (portable.name.includes('/')) {
             const leafName = portable.name.slice(portable.name.lastIndexOf('/') + 1);
             portable = { ...portable, name: leafName };
+          }
+          if (portable.scope === 'plugin' || portable.scope?.startsWith('extension:')) {
+            portable = { ...portable, scope: 'user' };
           }
 
           // Find target tool instance
@@ -629,8 +714,8 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
         // Send completion progress
         if (!sender.isDestroyed()) {
           sender.send('progress:import', {
-            current: components.length,
-            total: components.length,
+            current: totalItems,
+            total: totalItems,
             componentName: '',
             status: 'complete',
           } satisfies ImportProgressEvent);
@@ -1166,56 +1251,67 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
   }
 
   // --- plugins:list ---
-  ipcMain.handle('plugins:list', async (_event, instanceId: string = 'claude-code-default'): Promise<IpcResult<NativePlugin[]>> => {
-    try {
-      logger.info(MODULE, 'plugins:list');
-      const adapter = registry.getAdapter(instanceId);
-      const components = await adapter.scan();
-      const pluginComponents = components.filter((c) => c.id.scope === 'plugin');
+  ipcMain.handle(
+    'plugins:list',
+    async (
+      _event,
+      instanceId: string = 'claude-code-default',
+    ): Promise<IpcResult<NativePlugin[]>> => {
+      try {
+        logger.info(MODULE, 'plugins:list');
+        const adapter = registry.getAdapter(instanceId);
+        const components = await adapter.scan();
+        const pluginComponents = components.filter((c) => c.id.scope === 'plugin');
 
-      // Group by pluginKey
-      const groups = new Map<
-        string,
-        { components: Component[]; enabled: boolean; version?: string; pluginKey: string }
-      >();
-      for (const c of pluginComponents) {
-        const pluginKey = (c.extensions?.pluginKey as string) ?? c.id.name;
-        if (!groups.has(pluginKey)) {
-          groups.set(pluginKey, {
-            components: [],
-            enabled: c.enabled ?? false,
-            version: c.version,
-            pluginKey,
+        // Group by pluginKey
+        const groups = new Map<
+          string,
+          { components: Component[]; enabled: boolean; version?: string; pluginKey: string }
+        >();
+        for (const c of pluginComponents) {
+          const pluginKey = (c.extensions?.pluginKey as string) ?? c.id.name;
+          if (!groups.has(pluginKey)) {
+            groups.set(pluginKey, {
+              components: [],
+              enabled: c.enabled ?? false,
+              version: c.version,
+              pluginKey,
+            });
+          }
+          groups.get(pluginKey)!.components.push(c);
+        }
+
+        const plugins: NativePlugin[] = [];
+        for (const [key, group] of groups) {
+          const [pluginName, marketplace] = key.includes('@') ? key.split('@') : [key, 'unknown'];
+          plugins.push({
+            pluginKey: key,
+            pluginName,
+            marketplace,
+            version: group.version ?? '',
+            enabled: group.enabled,
+            scope: 'plugin',
+            componentCount: group.components.length,
           });
         }
-        groups.get(pluginKey)!.components.push(c);
-      }
 
-      const plugins: NativePlugin[] = [];
-      for (const [key, group] of groups) {
-        const [pluginName, marketplace] = key.includes('@') ? key.split('@') : [key, 'unknown'];
-        plugins.push({
-          pluginKey: key,
-          pluginName,
-          marketplace,
-          version: group.version ?? '',
-          enabled: group.enabled,
-          scope: 'plugin',
-          componentCount: group.components.length,
-        });
+        return ok(plugins);
+      } catch (err) {
+        logger.error(MODULE, 'plugins:list failed', err as Error);
+        return fail(err);
       }
-
-      return ok(plugins);
-    } catch (err) {
-      logger.error(MODULE, 'plugins:list failed', err as Error);
-      return fail(err);
-    }
-  });
+    },
+  );
 
   // --- plugins:toggle ---
   ipcMain.handle(
     'plugins:toggle',
-    async (_event, pluginKey: string, enabled: boolean, instanceId: string = 'claude-code-default'): Promise<IpcResult<void>> => {
+    async (
+      _event,
+      pluginKey: string,
+      enabled: boolean,
+      instanceId: string = 'claude-code-default',
+    ): Promise<IpcResult<void>> => {
       try {
         logger.info(MODULE, `plugins:toggle ${pluginKey} → ${enabled}`);
         const adapter = registry.getAdapter(instanceId);
@@ -1228,9 +1324,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
             false,
           );
         }
-        await withAdapterLock(instanceId, () =>
-          extended.togglePlugin(pluginKey, enabled),
-        );
+        await withAdapterLock(instanceId, () => extended.togglePlugin(pluginKey, enabled));
         return ok(undefined);
       } catch (err) {
         logger.error(MODULE, 'plugins:toggle failed', err as Error);
@@ -1242,7 +1336,11 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
   // --- plugins:uninstall ---
   ipcMain.handle(
     'plugins:uninstall',
-    async (_event, pluginKey: string, instanceId: string = 'claude-code-default'): Promise<IpcResult<void>> => {
+    async (
+      _event,
+      pluginKey: string,
+      instanceId: string = 'claude-code-default',
+    ): Promise<IpcResult<void>> => {
       try {
         logger.info(MODULE, `plugins:uninstall ${pluginKey}`);
         const adapter = registry.getAdapter(instanceId);

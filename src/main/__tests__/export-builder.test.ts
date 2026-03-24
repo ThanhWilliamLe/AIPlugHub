@@ -29,11 +29,7 @@ describe('buildBundle', () => {
       makeComponent({ id: { ...baseId, name: 'selected' } }),
       makeComponent({ id: { ...baseId, name: 'not-selected' } }),
     ];
-    const bundle = buildBundle(
-      [{ ...baseId, name: 'selected' }],
-      components,
-      {},
-    );
+    const bundle = buildBundle([{ ...baseId, name: 'selected' }], components, {});
     expect(bundle.components).toHaveLength(1);
     expect(bundle.components[0].name).toBe('selected');
   });
@@ -200,11 +196,7 @@ describe('toPortable — portability warnings', () => {
         supportingFiles: ['scripts/run.sh', 'data/config.yml'],
       },
     });
-    const bundle = buildBundle(
-      [{ ...baseId, type: 'skill' }],
-      [component],
-      {},
-    );
+    const bundle = buildBundle([{ ...baseId, type: 'skill' }], [component], {});
     expect(bundle.components[0].portabilityWarnings![0]).toContain('2 supporting file');
   });
 });
@@ -225,5 +217,121 @@ describe('toPortable — tool extensions', () => {
     const component = makeComponent({ id: baseId, extensions: undefined });
     const bundle = buildBundle([baseId], [component], {});
     expect(bundle.components[0].toolExtensions).toBeUndefined();
+  });
+});
+
+// ─── v1.7.0: Plugin grouping in export (R1) ────────────────────────
+
+describe('buildBundle — plugin grouping (R1)', () => {
+  const pluginSkillId: ComponentId = {
+    tool: 'claude-code',
+    type: 'skill',
+    name: 'agent-teams@workflows/team-spawn',
+    scope: 'plugin',
+  };
+
+  const pluginAgentId: ComponentId = {
+    tool: 'claude-code',
+    type: 'agent',
+    name: 'agent-teams@workflows/team-lead',
+    scope: 'plugin',
+  };
+
+  const standaloneId: ComponentId = {
+    tool: 'claude-code',
+    type: 'skill',
+    name: 'my-custom-skill',
+    scope: 'user',
+  };
+
+  function makePluginComponent(id: ComponentId): Component {
+    return makeComponent({
+      id,
+      extensions: {
+        pluginKey: 'agent-teams@workflows',
+        pluginName: 'agent-teams',
+        marketplace: 'workflows',
+        pluginVersion: '1.0.2',
+        pluginEnabled: true,
+      },
+      version: '1.0.2',
+      core: { description: 'test', content: '# test' },
+    });
+  }
+
+  it('groups plugin-scope components into bundle.plugins', () => {
+    const components = [
+      makePluginComponent(pluginSkillId),
+      makePluginComponent(pluginAgentId),
+      makeComponent({
+        id: standaloneId,
+        core: { description: 'standalone', content: '# standalone' },
+      }),
+    ];
+
+    const bundle = buildBundle([pluginSkillId, pluginAgentId, standaloneId], components, {});
+
+    // Plugin components should be in bundle.plugins, not bundle.components
+    expect(bundle.plugins).toHaveLength(1);
+    expect(bundle.plugins[0].pluginKey).toBe('agent-teams@workflows');
+    expect(bundle.plugins[0].pluginName).toBe('agent-teams');
+    expect(bundle.plugins[0].marketplace).toBe('workflows');
+    expect(bundle.plugins[0].version).toBe('1.0.2');
+    expect(bundle.plugins[0].enabled).toBe(true);
+    expect(bundle.plugins[0].components).toHaveLength(2);
+
+    // Standalone should be in bundle.components
+    expect(bundle.components).toHaveLength(1);
+    expect(bundle.components[0].name).toBe('my-custom-skill');
+  });
+
+  it('does not put plugin components in flat components array', () => {
+    const components = [makePluginComponent(pluginSkillId)];
+    const bundle = buildBundle([pluginSkillId], components, {});
+
+    expect(bundle.components).toHaveLength(0);
+    expect(bundle.plugins).toHaveLength(1);
+    expect(bundle.plugins[0].components).toHaveLength(1);
+  });
+
+  it('groups multiple plugins separately', () => {
+    const otherPluginId: ComponentId = {
+      tool: 'claude-code',
+      type: 'skill',
+      name: 'code-review@marketplace/review',
+      scope: 'plugin',
+    };
+    const otherPluginComp = makeComponent({
+      id: otherPluginId,
+      extensions: {
+        pluginKey: 'code-review@marketplace',
+        pluginName: 'code-review',
+        marketplace: 'marketplace',
+        pluginVersion: '2.0.0',
+        pluginEnabled: false,
+      },
+      version: '2.0.0',
+      core: { description: 'review', content: '# review' },
+    });
+
+    const components = [makePluginComponent(pluginSkillId), otherPluginComp];
+    const bundle = buildBundle([pluginSkillId, otherPluginId], components, {});
+
+    expect(bundle.plugins).toHaveLength(2);
+    const keys = bundle.plugins.map((p) => p.pluginKey);
+    expect(keys).toContain('agent-teams@workflows');
+    expect(keys).toContain('code-review@marketplace');
+  });
+
+  it('handles empty plugin selection', () => {
+    const components = [
+      makeComponent({
+        id: standaloneId,
+        core: { description: 'standalone', content: '# standalone' },
+      }),
+    ];
+    const bundle = buildBundle([standaloneId], components, {});
+    expect(bundle.plugins).toHaveLength(0);
+    expect(bundle.components).toHaveLength(1);
   });
 });

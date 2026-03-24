@@ -9,6 +9,7 @@ import type {
   Component,
   ComponentId,
   PortableComponent,
+  PortablePlugin,
   InstallTarget,
   ScanProgressEvent,
   ImportProgressEvent,
@@ -60,6 +61,7 @@ export interface AiPlugHubAPI {
     importBundle(
       components: PortableComponent[],
       resolutions: ConflictResolution[],
+      plugins?: PortablePlugin[],
     ): Promise<ImportResult>;
     saveBundle(json: string, defaultName: string): Promise<string | null>;
   };

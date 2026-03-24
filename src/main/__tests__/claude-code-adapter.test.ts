@@ -1162,6 +1162,7 @@ describe('ClaudeCodeAdapter.scanPlugins', () => {
       pluginName: 'agent-teams',
       marketplace: 'claude-code-workflows',
       pluginVersion: '1.2.0',
+      pluginEnabled: false,
     });
   });
 

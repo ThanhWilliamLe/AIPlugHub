@@ -7,6 +7,7 @@ import type {
   Component,
   ComponentId,
   PortableComponent,
+  PortablePlugin,
   Bundle,
   ExportOptions,
   ToolId,
@@ -102,6 +103,8 @@ function toPortable(component: Component): PortableComponent {
 
 /**
  * Build a complete bundle from selected components.
+ * Plugin-scope components are grouped into PortablePlugin entries (R1).
+ * Non-plugin components go into the flat components array.
  */
 export function buildBundle(
   selectedIds: ComponentId[],
@@ -122,8 +125,46 @@ export function buildBundle(
 
   const bundle = createBundle(bundleName, Array.from(toolSet), options.description);
 
-  // Convert each component to portable form
-  bundle.components = selected.map(toPortable);
+  // Separate plugin-scope components from standalone components
+  const pluginComponents: Component[] = [];
+  const standaloneComponents: Component[] = [];
+
+  for (const c of selected) {
+    const ext = c.extensions as Record<string, unknown> | undefined;
+    if (c.id.scope === 'plugin' && ext?.pluginKey) {
+      pluginComponents.push(c);
+    } else {
+      standaloneComponents.push(c);
+    }
+  }
+
+  // Group plugin components by pluginKey into PortablePlugin entries
+  const pluginMap = new Map<string, { components: Component[]; ext: Record<string, unknown> }>();
+  for (const c of pluginComponents) {
+    const ext = c.extensions as Record<string, unknown>;
+    const pluginKey = ext.pluginKey as string;
+    let entry = pluginMap.get(pluginKey);
+    if (!entry) {
+      entry = { components: [], ext };
+      pluginMap.set(pluginKey, entry);
+    }
+    entry.components.push(c);
+  }
+
+  bundle.plugins = Array.from(pluginMap.entries()).map(([pluginKey, { components, ext }]) => {
+    const plugin: PortablePlugin = {
+      pluginKey,
+      pluginName: (ext.pluginName as string) ?? pluginKey,
+      marketplace: (ext.marketplace as string) ?? '',
+      version: (ext.pluginVersion as string) ?? undefined,
+      enabled: (ext.pluginEnabled as boolean) ?? true,
+      components: components.map(toPortable),
+    };
+    return plugin;
+  });
+
+  // Standalone (non-plugin) components go flat
+  bundle.components = standaloneComponents.map(toPortable);
 
   // Warn if some selected components were not found (stale selection)
   if (selected.length < selectedIds.length) {

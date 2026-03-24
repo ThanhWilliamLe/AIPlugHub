@@ -116,11 +116,7 @@ describe('toggleSelectId', () => {
   });
 
   it('accumulates multiple distinct ids', () => {
-    const ids = [
-      makeId({ name: 'a' }),
-      makeId({ name: 'b' }),
-      makeId({ name: 'c' }),
-    ];
+    const ids = [makeId({ name: 'a' }), makeId({ name: 'b' }), makeId({ name: 'c' })];
     for (const id of ids) {
       useWizardStore.getState().toggleSelectId(id);
     }
@@ -176,7 +172,12 @@ describe('startImport', () => {
 
   it('clears bundle and conflicts', () => {
     useWizardStore.setState({
-      bundle: { formatVersion: '1.0', exportedFrom: { tools: [], date: '' }, plugins: [], components: [] },
+      bundle: {
+        formatVersion: '1.0',
+        exportedFrom: { tools: [], date: '' },
+        plugins: [],
+        components: [],
+      },
       conflicts: { newComponents: [], conflicts: [], incompatible: [] },
     });
     useWizardStore.getState().startImport();
@@ -355,7 +356,9 @@ describe('setAlwaysOverride', () => {
     expect(useWizardStore.getState().alwaysOverride).toBe(false);
     // Resolutions remain unchanged
     const { resolutions } = useWizardStore.getState();
-    expect(resolutions.find((r) => r.componentKey.name === 'changed-server')?.action).toBe('install');
+    expect(resolutions.find((r) => r.componentKey.name === 'changed-server')?.action).toBe(
+      'install',
+    );
   });
 });
 
@@ -388,7 +391,12 @@ describe('closeWizard', () => {
   it('resets all import state', () => {
     useWizardStore.setState({
       importStep: 2,
-      bundle: { formatVersion: '1.0', exportedFrom: { tools: [], date: '' }, plugins: [], components: [] },
+      bundle: {
+        formatVersion: '1.0',
+        exportedFrom: { tools: [], date: '' },
+        plugins: [],
+        components: [],
+      },
       conflicts: { newComponents: [], conflicts: [], incompatible: [] },
       resolutions: [{ componentKey: { type: 'mcp-server', name: 'x' }, action: 'install' }],
       alwaysOverride: true,
@@ -485,6 +493,7 @@ describe('executeImport -- with no configs', () => {
     expect(window.aiplughub.bundles.importBundle).toHaveBeenCalledWith(
       [newComponent],
       [],
+      [], // plugins (empty bundle)
     );
   });
 
@@ -578,6 +587,7 @@ describe('executeImport -- with no configs', () => {
     expect(window.aiplughub.bundles.importBundle).toHaveBeenCalledWith(
       [newComponent],
       [skipRes],
+      [], // plugins (empty bundle)
     );
   });
 });
@@ -589,9 +599,7 @@ describe('executeImport -- with no configs', () => {
 describe('executeImport -- with pending configs', () => {
   const componentWithConfig = makePortable({
     name: 'api-server',
-    requiredConfig: [
-      { key: 'API_KEY', sensitive: true, envVar: 'API_KEY' },
-    ],
+    requiredConfig: [{ key: 'API_KEY', sensitive: true, envVar: 'API_KEY' }],
   });
 
   const conflictManifest: ConflictManifest = {
@@ -698,9 +706,7 @@ describe('confirmConfigs', () => {
   const componentWithConfig = makePortable({
     name: 'api-server',
     core: { transport: 'stdio' as const, command: 'api-cmd' },
-    requiredConfig: [
-      { key: 'API_KEY', sensitive: true, envVar: 'API_KEY' },
-    ],
+    requiredConfig: [{ key: 'API_KEY', sensitive: true, envVar: 'API_KEY' }],
   });
 
   it('patches components with configValues and calls importBundle', async () => {
@@ -719,7 +725,9 @@ describe('confirmConfigs', () => {
     const calledComponents = vi.mocked(window.aiplughub.bundles.importBundle).mock.calls[0][0];
     expect(calledComponents).toHaveLength(1);
     // The patched component should have the env var injected into core.env
-    const patched = calledComponents[0] as PortableComponent & { core: { env?: Record<string, string> } };
+    const patched = calledComponents[0] as PortableComponent & {
+      core: { env?: Record<string, string> };
+    };
     expect(patched.core.env).toEqual({ API_KEY: 'secret-123' });
   });
 
@@ -762,7 +770,10 @@ describe('confirmConfigs', () => {
   });
 
   it('does not mutate components without sensitive configs', async () => {
-    const plainComponent = makePortable({ name: 'plain', core: { transport: 'stdio' as const, command: 'x' } });
+    const plainComponent = makePortable({
+      name: 'plain',
+      core: { transport: 'stdio' as const, command: 'x' },
+    });
 
     useWizardStore.setState({
       activeWizard: 'import',
@@ -775,7 +786,9 @@ describe('confirmConfigs', () => {
     await useWizardStore.getState().confirmConfigs();
 
     const calledComponents = vi.mocked(window.aiplughub.bundles.importBundle).mock.calls[0][0];
-    const result = calledComponents[0] as PortableComponent & { core: { env?: Record<string, string> } };
+    const result = calledComponents[0] as PortableComponent & {
+      core: { env?: Record<string, string> };
+    };
     expect(result.core.env).toBeUndefined();
   });
 });
@@ -822,7 +835,7 @@ describe('buildDefaultFilename', () => {
     expect(result).toMatch(/^plughub-2-plugins-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('includes today\'s date in YYYY-MM-DD format', () => {
+  it("includes today's date in YYYY-MM-DD format", () => {
     const ids = [makeId({ tool: 'claude-code' })];
     const result = buildDefaultFilename(ids);
     const today = new Date().toISOString().slice(0, 10);

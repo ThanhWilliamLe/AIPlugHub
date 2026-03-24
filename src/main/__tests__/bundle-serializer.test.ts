@@ -174,3 +174,86 @@ describe('createBundle', () => {
     expect(new Date(bundle.exportedFrom.date).getTime()).not.toBeNaN();
   });
 });
+
+// ─── v1.7.0: PortablePlugin with pluginKey (R1) ────────────────────
+
+describe('deserializeBundle — v1.7.0 plugin format', () => {
+  it('accepts v1.7.0 plugin with pluginKey', () => {
+    const json = JSON.stringify({
+      formatVersion: '1.0',
+      exportedFrom: { tools: ['claude-code'], date: '2026-03-24' },
+      components: [],
+      plugins: [
+        {
+          pluginKey: 'agent-teams@workflows',
+          pluginName: 'agent-teams',
+          marketplace: 'workflows',
+          version: '1.0.2',
+          enabled: true,
+          components: [
+            {
+              type: 'skill',
+              name: 'agent-teams@workflows/team-spawn',
+              core: { description: '', content: '' },
+            },
+          ],
+        },
+      ],
+    });
+    const bundle = deserializeBundle(json);
+    expect(bundle.plugins).toHaveLength(1);
+    expect(bundle.plugins[0].pluginKey).toBe('agent-teams@workflows');
+    expect(bundle.plugins[0].components).toHaveLength(1);
+  });
+
+  it('accepts legacy plugin with name field (backwards compat)', () => {
+    const json = JSON.stringify({
+      formatVersion: '1.0',
+      exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+      components: [],
+      plugins: [
+        {
+          name: 'legacy-plugin',
+          components: [{ type: 'skill', name: 'foo', core: { description: '', content: '' } }],
+        },
+      ],
+    });
+    const bundle = deserializeBundle(json);
+    expect(bundle.plugins).toHaveLength(1);
+  });
+
+  it('rejects plugin without pluginKey or name', () => {
+    const json = JSON.stringify({
+      formatVersion: '1.0',
+      exportedFrom: { tools: [], date: '' },
+      components: [],
+      plugins: [{ components: [] }],
+    });
+    expect(() => deserializeBundle(json)).toThrow('pluginKey or name');
+  });
+
+  it('round-trips v1.7.0 bundle with plugins', () => {
+    const bundle: Bundle = {
+      formatVersion: '1.0',
+      exportedFrom: { tools: ['claude-code'], date: '2026-03-24T00:00:00.000Z' },
+      plugins: [
+        {
+          pluginKey: 'test@market',
+          pluginName: 'test',
+          marketplace: 'market',
+          version: '1.0.0',
+          enabled: true,
+          components: [
+            { type: 'agent', name: 'test@market/my-agent', core: { description: 'test agent' } },
+          ],
+        },
+      ],
+      components: [
+        { type: 'mcp-server', name: 'standalone', core: { transport: 'stdio', command: 'x' } },
+      ],
+    };
+    const json = serializeBundle(bundle);
+    const parsed = deserializeBundle(json);
+    expect(parsed).toEqual(bundle);
+  });
+});

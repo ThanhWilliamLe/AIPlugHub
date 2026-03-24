@@ -23,6 +23,7 @@ export type UiStoreState = {
   searchQuery: string;
   toolFilters: ToolId[];
   typeFilters: ComponentType[];
+  scopeFilter: string | null; // e.g., 'plugin', 'project', or null for all
 
   // Detail panel
   selectedComponentId: ComponentId | null;
@@ -41,6 +42,7 @@ export type UiStoreState = {
   setSearchQuery: (query: string) => void;
   toggleToolFilter: (toolId: ToolId) => void;
   toggleTypeFilter: (type: ComponentType) => void;
+  toggleScopeFilter: (scope: string) => void;
   clearFilters: () => void;
   selectComponent: (id: ComponentId | null) => void;
   setShowSettings: (show: boolean) => void;
@@ -67,6 +69,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   searchQuery: '',
   toolFilters: [],
   typeFilters: [],
+  scopeFilter: null,
   selectedComponentId: null,
   showSettings: false,
   showFirstRun: false,
@@ -102,7 +105,12 @@ export const useUiStore = create<UiStoreState>((set) => ({
         : [...state.typeFilters, type],
     })),
 
-  clearFilters: () => set({ toolFilters: [], typeFilters: [], searchQuery: '' }),
+  toggleScopeFilter: (scope) =>
+    set((state) => ({
+      scopeFilter: state.scopeFilter === scope ? null : scope,
+    })),
+
+  clearFilters: () => set({ toolFilters: [], typeFilters: [], scopeFilter: null, searchQuery: '' }),
 
   selectComponent: (selectedComponentId) => set({ selectedComponentId }),
 

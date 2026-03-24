@@ -10,6 +10,7 @@ import type {
   ConflictResolution,
   ImportResult,
   PortableComponent,
+  PortablePlugin,
   ExportOptions,
   ConfigRequirement,
 } from '@shared/types';
@@ -48,6 +49,7 @@ export type WizardStoreState = {
   pendingConfigs: PendingConfig[];
   configValues: Record<string, string>; // key: `${componentName}::${configKey}`
   componentsToInstall: PortableComponent[];
+  pluginsToInstall: PortablePlugin[];
   showingConfigPrompts: boolean;
 
   // Loading
@@ -131,12 +133,19 @@ function patchWithConfigValues(
 }
 
 export const useWizardStore = create<WizardStoreState>((set, get) => {
-  /** Shared install logic — sends components to IPC and updates result state */
-  async function doInstall(components: PortableComponent[]): Promise<void> {
+  /** Shared install logic — sends components + plugins to IPC and updates result state */
+  async function doInstall(
+    components: PortableComponent[],
+    plugins?: PortablePlugin[],
+  ): Promise<void> {
     set({ importing: true, error: null, importStep: 2, showingConfigPrompts: false });
     try {
       const skipResolutions = get().resolutions.filter((r) => r.action === 'skip');
-      const result = await window.aiplughub.bundles.importBundle(components, skipResolutions);
+      const result = await window.aiplughub.bundles.importBundle(
+        components,
+        skipResolutions,
+        plugins,
+      );
       set({ importResult: result, importing: false });
     } catch (err) {
       set({ importing: false, error: (err as Error).message });
@@ -160,6 +169,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     pendingConfigs: [],
     configValues: {},
     componentsToInstall: [],
+    pluginsToInstall: [],
     showingConfigPrompts: false,
     loading: false,
     error: null,
@@ -240,6 +250,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         pendingConfigs: [],
         configValues: {},
         componentsToInstall: [],
+        pluginsToInstall: [],
         showingConfigPrompts: false,
         error: null,
       }),
@@ -304,6 +315,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       if (!bundle || !conflicts) return;
 
       const toInstall = collectToInstall(conflicts, resolutions);
+      // v1.7.0: pass plugins directly from bundle for full structure restoration
+      const pluginsForImport = bundle.plugins ?? [];
 
       // Collect required sensitive configs from components to install
       const pendingConfigs: PendingConfig[] = [];
@@ -322,6 +335,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         set({
           importStep: 2,
           componentsToInstall: toInstall,
+          pluginsToInstall: pluginsForImport,
           pendingConfigs,
           configValues: {},
           showingConfigPrompts: true,
@@ -330,7 +344,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       }
 
       // No configs needed — install directly
-      await doInstall(toInstall);
+      await doInstall(toInstall, pluginsForImport);
     },
 
     setConfigValue: (key, value) =>
@@ -340,9 +354,9 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
 
     // Fix H1: patch components with config values, then install
     confirmConfigs: async () => {
-      const { componentsToInstall, configValues } = get();
+      const { componentsToInstall, pluginsToInstall, configValues } = get();
       const patched = patchWithConfigValues(componentsToInstall, configValues);
-      await doInstall(patched);
+      await doInstall(patched, pluginsToInstall);
     },
 
     closeWizard: () =>
@@ -363,6 +377,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         pendingConfigs: [],
         configValues: {},
         componentsToInstall: [],
+        pluginsToInstall: [],
         showingConfigPrompts: false,
         loading: false,
         error: null,

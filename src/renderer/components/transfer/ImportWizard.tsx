@@ -2,7 +2,7 @@
  * Import wizard — 2-step modal: Preview & Resolve → Config & Install (results).
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useWizardStore } from '@renderer/stores/wizard-store';
 import { useToolStore } from '@renderer/stores/tool-store';
 import { useUiStore } from '@renderer/stores/ui-store';
@@ -10,10 +10,10 @@ import { useToastStore } from '@renderer/stores/toast-store';
 import { TOOL_META, COMPONENT_TYPE_META } from '@shared/constants';
 import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { Button } from '@renderer/components/ui/button';
-import type { ImportProgressEvent } from '@shared/types';
+import type { ImportProgressEvent, PortablePlugin } from '@shared/types';
 import type { ConflictEntry, ConflictResolution } from '@shared/types';
 
-type ImportFilter = 'new' | 'conflicts' | 'identical' | 'incompatible';
+type ImportFilter = 'new' | 'conflicts' | 'identical' | 'incompatible' | 'plugins';
 
 /** Compact scope indicator for import preview items */
 function ScopeBadge({ scope }: { scope?: string }) {
@@ -30,6 +30,16 @@ export function ImportWizard() {
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<ImportFilter>>(new Set());
   const [importTypeFilters, setImportTypeFilters] = useState<Set<string>>(new Set());
+  const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(new Set());
+
+  const togglePluginExpand = useCallback((pluginKey: string) => {
+    setExpandedPlugins((prev) => {
+      const next = new Set(prev);
+      if (next.has(pluginKey)) next.delete(pluginKey);
+      else next.add(pluginKey);
+      return next;
+    });
+  }, []);
 
   const toggleFilter = (filter: ImportFilter) => {
     setActiveFilters((prev) => {
@@ -136,18 +146,23 @@ export function ImportWizard() {
     };
   }, [bundle, conflicts, realConflicts, identicalConflicts]);
 
-  // Count items that will be installed (new + non-skipped conflicts)
+  // Count items that will be installed (new + non-skipped conflicts + plugin groups)
   const installCount = useMemo(() => {
-    if (!conflicts) return 0;
+    if (!conflicts || !bundle) return 0;
     const newCount = conflicts.newComponents.length;
     const conflictInstalls = alwaysOverride
       ? realConflicts.length
       : resolutions.filter((r) => r.action === 'install').length +
         realConflicts.filter(
-          (c) => !resolutions.some((r) => r.componentKey.type === c.incoming.type && r.componentKey.name === c.incoming.name),
+          (c) =>
+            !resolutions.some(
+              (r) =>
+                r.componentKey.type === c.incoming.type && r.componentKey.name === c.incoming.name,
+            ),
         ).length; // Default action is 'install'
-    return newCount + conflictInstalls;
-  }, [conflicts, realConflicts, resolutions, alwaysOverride]);
+    const pluginCount = bundle.plugins.length;
+    return newCount + conflictInstalls + pluginCount;
+  }, [bundle, conflicts, realConflicts, resolutions, alwaysOverride]);
 
   if (!bundle || !conflicts) {
     if (loading) {
@@ -257,9 +272,7 @@ export function ImportWizard() {
               <span className="text-accent-olive">{bundleSummary.newCount} new</span>
             )}
             {bundleSummary.conflictCount > 0 && (
-              <span className="text-amber-600">
-                {bundleSummary.conflictCount} to review
-              </span>
+              <span className="text-amber-600">{bundleSummary.conflictCount} to review</span>
             )}
             {bundleSummary.identicalCount > 0 && (
               <span className="text-sand-muted">{bundleSummary.identicalCount} identical</span>
@@ -357,6 +370,20 @@ export function ImportWizard() {
                   Incompatible ({conflicts.incompatible.length})
                 </button>
               )}
+              {bundle.plugins.length > 0 && (
+                <button
+                  type="button"
+                  title="Plugin groups — will restore full plugin structure"
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    activeFilters.has('plugins')
+                      ? 'bg-blue-50 border-blue-400 text-blue-700'
+                      : 'border-sand-border text-sand-secondary hover:bg-sand-surface/60'
+                  }`}
+                  onClick={() => toggleFilter('plugins')}
+                >
+                  Plugins ({bundle.plugins.length})
+                </button>
+              )}
               {activeFilters.size > 0 && (
                 <button
                   type="button"
@@ -398,6 +425,25 @@ export function ImportWizard() {
               </div>
             )}
 
+            {/* Plugin groups (R4) */}
+            {bundle.plugins.length > 0 && (showSection('plugins') || activeFilters.size === 0) && (
+              <section>
+                <h3 className="text-xs font-medium text-sand-secondary uppercase tracking-wider mb-2">
+                  Plugin Groups ({bundle.plugins.length})
+                </h3>
+                <div className="space-y-1.5">
+                  {bundle.plugins.map((plugin) => (
+                    <PluginGroupRow
+                      key={plugin.pluginKey}
+                      plugin={plugin}
+                      expanded={expandedPlugins.has(plugin.pluginKey)}
+                      onToggleExpand={() => togglePluginExpand(plugin.pluginKey)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* New components */}
             {conflicts.newComponents.length > 0 && showSection('new') && (
               <section>
@@ -405,25 +451,27 @@ export function ImportWizard() {
                   New ({conflicts.newComponents.length})
                 </h3>
                 <div className="space-y-1">
-                  {conflicts.newComponents.filter((c) => matchesTypeFilter(c.type)).map((c) => (
-                    <div
-                      key={`${c.type}:${c.name}`}
-                      className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-accent-olive/5"
-                    >
-                      <span className="text-xs text-accent-olive font-medium">NEW</span>
-                      <span className="font-mono text-sm truncate">{c.name}</span>
-                      <TypeBadge type={c.type} />
-                      <ScopeBadge scope={c.scope} />
-                      {c.marketplaceSource && (
-                        <span
-                          className="text-xs text-sand-muted ml-auto shrink-0"
-                          title={`Available in marketplace: ${c.marketplaceSource.sourceId}`}
-                        >
-                          via marketplace
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                  {conflicts.newComponents
+                    .filter((c) => matchesTypeFilter(c.type))
+                    .map((c) => (
+                      <div
+                        key={`${c.type}:${c.name}`}
+                        className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-accent-olive/5"
+                      >
+                        <span className="text-xs text-accent-olive font-medium">NEW</span>
+                        <span className="font-mono text-sm truncate">{c.name}</span>
+                        <TypeBadge type={c.type} />
+                        <ScopeBadge scope={c.scope} />
+                        {c.marketplaceSource && (
+                          <span
+                            className="text-xs text-sand-muted ml-auto shrink-0"
+                            title={`Available in marketplace: ${c.marketplaceSource.sourceId}`}
+                          >
+                            via marketplace
+                          </span>
+                        )}
+                      </div>
+                    ))}
                 </div>
               </section>
             )}
@@ -483,19 +531,21 @@ export function ImportWizard() {
                   </label>
                 </div>
                 <div className="space-y-2">
-                  {realConflicts.filter((c) => matchesTypeFilter(c.incoming.type)).map((conflict) => (
-                    <ConflictRow
-                      key={`${conflict.incoming.type}:${conflict.incoming.name}`}
-                      conflict={conflict}
-                      resolution={resolutions.find(
-                        (r) =>
-                          r.componentKey.type === conflict.incoming.type &&
-                          r.componentKey.name === conflict.incoming.name,
-                      )}
-                      onResolve={setResolution}
-                      disabled={alwaysOverride}
-                    />
-                  ))}
+                  {realConflicts
+                    .filter((c) => matchesTypeFilter(c.incoming.type))
+                    .map((conflict) => (
+                      <ConflictRow
+                        key={`${conflict.incoming.type}:${conflict.incoming.name}`}
+                        conflict={conflict}
+                        resolution={resolutions.find(
+                          (r) =>
+                            r.componentKey.type === conflict.incoming.type &&
+                            r.componentKey.name === conflict.incoming.name,
+                        )}
+                        onResolve={setResolution}
+                        disabled={alwaysOverride}
+                      />
+                    ))}
                 </div>
               </section>
             )}
@@ -507,19 +557,22 @@ export function ImportWizard() {
                   Incompatible ({conflicts.incompatible.length})
                 </h3>
                 <p className="text-xs text-sand-muted mb-2">
-                  For AI tools you haven't installed (like Claude Desktop or Gemini CLI) — will be skipped
+                  For AI tools you haven't installed (like Claude Desktop or Gemini CLI) — will be
+                  skipped
                 </p>
                 <div className="space-y-1">
-                  {conflicts.incompatible.filter((item) => matchesTypeFilter(item.component.type)).map((item) => (
-                    <div
-                      key={`${item.component.type}:${item.component.name}`}
-                      className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-sand-surface/50 opacity-60"
-                    >
-                      <span className="text-xs text-sand-muted font-medium">SKIP</span>
-                      <span className="font-mono text-sm truncate">{item.component.name}</span>
-                      <span className="text-xs text-sand-muted ml-auto">{item.reason}</span>
-                    </div>
-                  ))}
+                  {conflicts.incompatible
+                    .filter((item) => matchesTypeFilter(item.component.type))
+                    .map((item) => (
+                      <div
+                        key={`${item.component.type}:${item.component.name}`}
+                        className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-sand-surface/50 opacity-60"
+                      >
+                        <span className="text-xs text-sand-muted font-medium">SKIP</span>
+                        <span className="font-mono text-sm truncate">{item.component.name}</span>
+                        <span className="text-xs text-sand-muted ml-auto">{item.reason}</span>
+                      </div>
+                    ))}
                 </div>
               </section>
             )}
@@ -587,9 +640,7 @@ export function ImportWizard() {
                     </div>
                   </>
                 ) : (
-                  <p className="text-sm text-sand-secondary animate-pulse">
-                    Installing plugins...
-                  </p>
+                  <p className="text-sm text-sand-secondary animate-pulse">Installing plugins...</p>
                 )}
               </div>
             )}
@@ -653,7 +704,9 @@ export function ImportWizard() {
                           key={`${s.component.type}:${s.component.name}`}
                           className="flex items-center gap-2 py-1 px-3 rounded bg-sand-surface/30 text-sm"
                         >
-                          <span className="font-mono truncate">{s.component.description ?? s.component.name}</span>
+                          <span className="font-mono truncate">
+                            {s.component.description ?? s.component.name}
+                          </span>
                           <TypeBadge type={s.component.type} />
                           <span className="text-xs text-sand-muted ml-auto shrink-0">
                             {s.reason}
@@ -677,7 +730,9 @@ export function ImportWizard() {
                           className="py-1 px-3 rounded bg-accent-destructive/5 text-sm"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-mono truncate">{f.component.description ?? f.component.name}</span>
+                            <span className="font-mono truncate">
+                              {f.component.description ?? f.component.name}
+                            </span>
                             <TypeBadge type={f.component.type} />
                           </div>
                           <p className="text-xs text-accent-destructive mt-0.5">
@@ -713,7 +768,11 @@ export function ImportWizard() {
         )}
         {importStep === 2 && showingConfigPrompts && !importing && !importResult && (
           <>
-            <Button variant="outline" size="sm" onClick={() => useWizardStore.getState().setImportStep(1)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => useWizardStore.getState().setImportStep(1)}
+            >
               {'\u2190 Back'}
             </Button>
             <Button
@@ -807,7 +866,11 @@ function ConflictRow({
           )}
         </div>
         <span
-          title={conflictType === 'scope-mismatch' ? 'This plugin is installed globally vs. for a specific project (or vice versa)' : undefined}
+          title={
+            conflictType === 'scope-mismatch'
+              ? 'This plugin is installed globally vs. for a specific project (or vice versa)'
+              : undefined
+          }
           className={`inline-block mt-0.5 text-xs px-1.5 py-0.5 rounded ${badgeColor[conflictType]}`}
         >
           {badgeText[conflictType]}
@@ -830,6 +893,87 @@ function ConflictRow({
         <option value="install">Replace</option>
         <option value="skip">Skip</option>
       </select>
+    </div>
+  );
+}
+
+/** Collapsible plugin group row for import preview (R4) */
+function PluginGroupRow({
+  plugin,
+  expanded,
+  onToggleExpand,
+}: {
+  plugin: PortablePlugin;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const componentCount = plugin.components.length;
+  // Count by type
+  const typeSummary = plugin.components.reduce(
+    (acc, c) => {
+      const label = COMPONENT_TYPE_META[c.type]?.label ?? c.type;
+      acc[label] = (acc[label] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+
+  return (
+    <div className="rounded-lg border border-sand-border/60 overflow-hidden">
+      <button
+        type="button"
+        className="w-full flex items-center gap-2 py-2 px-3 bg-blue-50/30 hover:bg-blue-50/50 transition-colors text-left"
+        onClick={onToggleExpand}
+        aria-expanded={expanded}
+      >
+        <span className="text-xs text-blue-600 shrink-0">{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span className="font-mono text-sm font-medium truncate">{plugin.pluginName}</span>
+        {plugin.version && (
+          <span className="text-xs text-sand-muted shrink-0">v{plugin.version}</span>
+        )}
+        <span className="text-xs text-sand-secondary shrink-0">
+          {componentCount} {componentCount === 1 ? 'component' : 'components'}
+        </span>
+        <span
+          className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+            plugin.enabled
+              ? 'bg-accent-olive/10 text-accent-olive'
+              : 'bg-sand-surface/60 text-sand-muted'
+          }`}
+        >
+          {plugin.enabled ? 'enabled' : 'disabled'}
+        </span>
+        {plugin.marketplace && (
+          <span className="text-xs text-sand-muted ml-auto shrink-0">@{plugin.marketplace}</span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-sand-border/40 bg-sand-paper/50 px-3 py-2 space-y-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-sand-secondary mb-1.5">
+            {Object.entries(typeSummary).map(([label, count]) => (
+              <span key={label}>
+                {count} {label}
+                {count !== 1 ? 's' : ''}
+              </span>
+            ))}
+          </div>
+          {plugin.components.map((c) => {
+            const leafName = c.name.includes('/')
+              ? c.name.slice(c.name.lastIndexOf('/') + 1)
+              : c.name;
+            return (
+              <div
+                key={`${c.type}:${c.name}`}
+                className="flex items-center gap-2 py-1 px-2 rounded bg-sand-surface/20 text-sm"
+              >
+                <span className="font-mono text-xs truncate">{leafName}</span>
+                <TypeBadge type={c.type} />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

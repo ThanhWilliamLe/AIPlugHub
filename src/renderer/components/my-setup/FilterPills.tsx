@@ -1,5 +1,5 @@
 /**
- * Dynamic filter pills — tool and type filters with counts.
+ * Dynamic filter pills — tool, type, and scope filters with counts.
  * Only shows filters for types/tools that exist in the user's setup.
  */
 
@@ -21,11 +21,21 @@ function contrastTextColor(hexBg: string): string {
 }
 
 export function FilterPills() {
-  const { toolFilters, typeFilters, toggleToolFilter, toggleTypeFilter, clearFilters } =
-    useUiStore();
-  const { activeTools, activeTypes, toolCounts, typeCounts, isFiltered } = useComponents();
+  const {
+    toolFilters,
+    typeFilters,
+    scopeFilter,
+    toggleToolFilter,
+    toggleTypeFilter,
+    toggleScopeFilter,
+    clearFilters,
+  } = useUiStore();
+  const { activeTools, activeTypes, toolCounts, typeCounts, scopeCounts, isFiltered } =
+    useComponents();
 
   if (activeTools.length === 0) return null;
+
+  const hasPlugins = scopeCounts.plugin > 0;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filters">
@@ -86,6 +96,41 @@ export function FilterPills() {
           </button>
         );
       })}
+
+      {/* Scope filters — only show when plugins exist */}
+      {hasPlugins && (
+        <>
+          <span className="w-px h-4 bg-sand-border mx-1" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() => toggleScopeFilter('plugin')}
+            className={cn(
+              'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+              scopeFilter === 'plugin'
+                ? 'bg-blue-600 text-white'
+                : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
+            )}
+            aria-pressed={scopeFilter === 'plugin'}
+          >
+            Plugins
+            <span className="opacity-70">({scopeCounts.plugin})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleScopeFilter('standalone')}
+            className={cn(
+              'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+              scopeFilter === 'standalone'
+                ? 'bg-blue-600 text-white'
+                : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
+            )}
+            aria-pressed={scopeFilter === 'standalone'}
+          >
+            Standalone
+            <span className="opacity-70">({scopeCounts.standalone})</span>
+          </button>
+        </>
+      )}
 
       {/* Clear all */}
       {isFiltered && (

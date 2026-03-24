@@ -21,6 +21,7 @@ import type {
   ComponentId,
   Component,
   PortableComponent,
+  PortablePlugin,
   InstallTarget,
   McpServerCore,
   SkillCore,
@@ -92,6 +93,7 @@ const TOOL_ID = 'claude-code' as const;
 export type ClaudeCodeAdapterExtended = ToolAdapter & {
   togglePlugin(pluginKey: string, enabled: boolean): Promise<void>;
   uninstallPlugin(pluginKey: string): Promise<void>;
+  installPlugin(plugin: PortablePlugin): Promise<Component[]>;
   getKnownMarketplaces(): Promise<KnownMarketplaceEntry[]>;
 };
 
@@ -495,6 +497,7 @@ export function createClaudeCodeAdapter(
       pluginName,
       marketplace,
       pluginVersion,
+      pluginEnabled: isEnabled,
     });
 
     // Scan skills subdirectory
@@ -837,9 +840,7 @@ export function createClaudeCodeAdapter(
   // -- Uninstall sub-routines --
 
   async function uninstallMcpServer(id: ComponentId): Promise<void> {
-    const mcpPath = id.projectPath
-      ? join(id.projectPath, '.claude.json')
-      : mcpConfigPath();
+    const mcpPath = id.projectPath ? join(id.projectPath, '.claude.json') : mcpConfigPath();
     if (!(await configIO.exists(mcpPath))) {
       throw new AppError('COMPONENT_NOT_FOUND', `MCP config not found: ${mcpPath}`, true);
     }
@@ -857,15 +858,11 @@ export function createClaudeCodeAdapter(
     validateName(id.name);
 
     // Resolve base directories — project-scoped components live under projectPath
-    const baseSkillsDir = id.projectPath
-      ? join(id.projectPath, '.claude', 'skills')
-      : skillsDir();
+    const baseSkillsDir = id.projectPath ? join(id.projectPath, '.claude', 'skills') : skillsDir();
     const baseCmdsDir = id.projectPath
       ? join(id.projectPath, '.claude', 'commands')
       : commandsDir();
-    const baseAgentsDir = id.projectPath
-      ? join(id.projectPath, '.claude', 'agents')
-      : agentsDir();
+    const baseAgentsDir = id.projectPath ? join(id.projectPath, '.claude', 'agents') : agentsDir();
     // For project scope, guard against paths outside the project root
     const guardPath = id.projectPath ?? rootPath;
 
@@ -910,9 +907,7 @@ export function createClaudeCodeAdapter(
   }
 
   async function uninstallHook(id: ComponentId): Promise<void> {
-    const path = id.projectPath
-      ? join(id.projectPath, '.claude', 'settings.json')
-      : settingsPath();
+    const path = id.projectPath ? join(id.projectPath, '.claude', 'settings.json') : settingsPath();
     if (!(await configIO.exists(path))) {
       throw new AppError('COMPONENT_NOT_FOUND', 'Settings file not found', true);
     }
@@ -1187,6 +1182,212 @@ export function createClaudeCodeAdapter(
       } catch (err) {
         logger.warn(MODULE, `Failed to clean up enabledPlugins for ${pluginKey}`, err);
       }
+    },
+
+    async installPlugin(plugin: PortablePlugin): Promise<Component[]> {
+      logger.info(MODULE, `installPlugin: ${plugin.pluginKey}`);
+      const pDir = pluginsDir();
+
+      // Determine install path — pluginKey is "name@marketplace"
+      // Use a safe directory name derived from pluginKey
+      const safeDirName = plugin.pluginKey.replace(/[^a-zA-Z0-9@_-]/g, '_');
+      const installPath = join(pDir, safeDirName);
+      assertPathWithin(installPath, pDir);
+      await mkdir(installPath, { recursive: true });
+
+      const installedComponents: Component[] = [];
+
+      // Write sub-component files to the plugin cache directory
+      for (const comp of plugin.components) {
+        // Skip unknown types (placeholders)
+        if (comp.type === 'unknown') continue;
+
+        // Extract leaf name — plugin-scoped names have format "pluginKey/leafName"
+        const leafName = comp.name.includes('/')
+          ? comp.name.slice(comp.name.lastIndexOf('/') + 1)
+          : comp.name;
+
+        try {
+          switch (comp.type) {
+            case 'skill': {
+              const core = comp.core as SkillCore;
+              const skillDir = join(installPath, 'skills', leafName);
+              assertPathWithin(skillDir, installPath);
+              await mkdir(skillDir, { recursive: true });
+
+              const fmObj: Record<string, unknown> = { name: leafName };
+              if (core.description) fmObj.description = core.description;
+              const exts = comp.toolExtensions?.['claude-code'] as
+                | Record<string, unknown>
+                | undefined;
+              if (exts) {
+                if (exts.disableModelInvocation != null)
+                  fmObj['disable-model-invocation'] = exts.disableModelInvocation;
+                if (exts.userInvocable != null) fmObj['user-invocable'] = exts.userInvocable;
+                if (exts.argumentHint) fmObj['argument-hint'] = exts.argumentHint;
+                if (exts.model) fmObj.model = exts.model;
+                if (exts.context != null) fmObj.context = exts.context;
+                if (exts.agent != null) fmObj.agent = exts.agent;
+              }
+              const fmYaml = yaml.dump(fmObj, { lineWidth: -1 }).trimEnd();
+              const content = `---\n${fmYaml}\n---\n${core.content}`;
+              const skillPath = join(skillDir, 'SKILL.md');
+              await configIO.writeFile(skillPath, content);
+
+              installedComponents.push({
+                id: {
+                  tool: TOOL_ID,
+                  type: 'skill',
+                  name: `${plugin.pluginKey}/${leafName}`,
+                  scope: 'plugin',
+                },
+                core,
+                configPath: skillPath,
+                tracking: 'managed',
+                version: plugin.version,
+                description: core.description || undefined,
+                extensions: {
+                  pluginKey: plugin.pluginKey,
+                  pluginName: plugin.pluginName,
+                  marketplace: plugin.marketplace,
+                  pluginVersion: plugin.version,
+                  pluginEnabled: plugin.enabled,
+                },
+              });
+              break;
+            }
+            case 'command': {
+              const core = comp.core as CommandCore;
+              const cmdsDir = join(installPath, 'commands');
+              await mkdir(cmdsDir, { recursive: true });
+
+              const fmObj: Record<string, unknown> = { name: leafName };
+              if (core.description) fmObj.description = core.description;
+              const fmYaml = yaml.dump(fmObj, { lineWidth: -1 }).trimEnd();
+              const content = `---\n${fmYaml}\n---\n${core.content}`;
+              const filePath = join(cmdsDir, `${leafName}.md`);
+              assertPathWithin(filePath, installPath);
+              await configIO.writeFile(filePath, content);
+
+              installedComponents.push({
+                id: {
+                  tool: TOOL_ID,
+                  type: 'command',
+                  name: `${plugin.pluginKey}/${leafName}`,
+                  scope: 'plugin',
+                },
+                core,
+                configPath: filePath,
+                tracking: 'managed',
+                version: plugin.version,
+                description: core.description || undefined,
+                extensions: {
+                  pluginKey: plugin.pluginKey,
+                  pluginName: plugin.pluginName,
+                  marketplace: plugin.marketplace,
+                  pluginVersion: plugin.version,
+                  pluginEnabled: plugin.enabled,
+                },
+              });
+              break;
+            }
+            case 'agent': {
+              const core = comp.core as AgentCore;
+              const agtsDir = join(installPath, 'agents');
+              await mkdir(agtsDir, { recursive: true });
+
+              const fmObj: Record<string, unknown> = { name: leafName };
+              if (comp.description) fmObj.description = comp.description;
+              if (core.model) fmObj.model = core.model;
+              if (core.tools) fmObj.tools = core.tools;
+              if (core.disallowedTools) fmObj.disallowedTools = core.disallowedTools;
+              if (core.maxTurns) fmObj.maxTurns = core.maxTurns;
+              const fmYaml = yaml.dump(fmObj, { lineWidth: -1 }).trimEnd();
+              const content = `---\n${fmYaml}\n---\n`;
+              const filePath = join(agtsDir, `${leafName}.md`);
+              assertPathWithin(filePath, installPath);
+              await configIO.writeFile(filePath, content);
+
+              installedComponents.push({
+                id: {
+                  tool: TOOL_ID,
+                  type: 'agent',
+                  name: `${plugin.pluginKey}/${leafName}`,
+                  scope: 'plugin',
+                },
+                core,
+                configPath: filePath,
+                tracking: 'managed',
+                version: plugin.version,
+                description: comp.description,
+                extensions: {
+                  pluginKey: plugin.pluginKey,
+                  pluginName: plugin.pluginName,
+                  marketplace: plugin.marketplace,
+                  pluginVersion: plugin.version,
+                  pluginEnabled: plugin.enabled,
+                },
+              });
+              break;
+            }
+            default:
+              logger.warn(
+                MODULE,
+                `installPlugin: unsupported sub-component type "${comp.type}" in plugin ${plugin.pluginKey}`,
+              );
+          }
+        } catch (err) {
+          logger.warn(
+            MODULE,
+            `installPlugin: failed to write ${comp.type} "${leafName}" for ${plugin.pluginKey}`,
+            err,
+          );
+        }
+      }
+
+      // Register in installed_plugins.json
+      const regPath = installedPluginsPath();
+      let data: InstalledPluginsData = { version: 1, plugins: {} };
+      try {
+        if (await configIO.exists(regPath)) {
+          data = (await configIO.readJSON(regPath)) as InstalledPluginsData;
+          if (!data.plugins) data.plugins = {};
+        }
+      } catch {
+        // Start fresh
+      }
+
+      const now = new Date().toISOString();
+      const entry: InstalledPluginEntry = {
+        scope: 'user',
+        installPath,
+        version: plugin.version ?? '0.0.0',
+        installedAt: now,
+        lastUpdated: now,
+      };
+      data.plugins[plugin.pluginKey] = [entry];
+      await mkdir(pDir, { recursive: true });
+      await configIO.writeJSON(regPath, data);
+
+      // Set enabledPlugins in settings.json
+      const sPath = settingsPath();
+      let settings: SettingsData = {};
+      try {
+        if (await configIO.exists(sPath)) {
+          settings = (await configIO.readJSON(sPath)) as SettingsData;
+        }
+      } catch {
+        // Start fresh
+      }
+      if (!settings.enabledPlugins) settings.enabledPlugins = {};
+      settings.enabledPlugins[plugin.pluginKey] = plugin.enabled;
+      await configIO.writeJSON(sPath, settings);
+
+      logger.info(
+        MODULE,
+        `installPlugin: ${plugin.pluginKey} — ${installedComponents.length} components installed`,
+      );
+      return installedComponents;
     },
 
     async getKnownMarketplaces(): Promise<KnownMarketplaceEntry[]> {

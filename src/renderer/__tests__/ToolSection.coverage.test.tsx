@@ -1,6 +1,6 @@
 /**
- * Coverage push for ToolSection.tsx — virtualization branch (50+ components)
- * and collapse toggle behaviour.
+ * Coverage push for ToolSection.tsx — collapse toggle behaviour and
+ * large list rendering (virtualization disabled for single-scroll UX).
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -58,8 +58,7 @@ describe('ToolSection — collapse / expand toggle', () => {
     expect(screen.getByText('skill-0')).toBeInTheDocument();
   });
 
-  it('hides virtualized list when collapsed', () => {
-    // 50+ components triggers virtualization
+  it('hides list when collapsed (large component count)', () => {
     const components = makeComponents(55);
     render(
       <ToolSection
@@ -79,9 +78,9 @@ describe('ToolSection — collapse / expand toggle', () => {
   });
 });
 
-describe('ToolSection — virtualization (50+ components)', () => {
-  it('renders the virtualized container div when component count >= 50', () => {
-    const components = makeComponents(50);
+describe('ToolSection — large component lists (single-scroll UX)', () => {
+  it('renders all components inline without nested scroll container', () => {
+    const components = makeComponents(100);
     const { container } = render(
       <ToolSection
         toolId="claude-code"
@@ -92,14 +91,13 @@ describe('ToolSection — virtualization (50+ components)', () => {
       />,
     );
 
-    // Virtualized path: the list container with overflow-y-auto should be present
+    // Non-virtualized path: list should NOT have maxHeight (no nested scroll)
     const list = container.querySelector('[role="list"]');
     expect(list).toBeInTheDocument();
-    // The overflow container is the scrollable div
-    expect(list?.style.maxHeight).toBe('60vh');
+    expect(list?.style.maxHeight).toBe('');
   });
 
-  it('renders the virtualized container for exactly 50 components', () => {
+  it('renders 50 components without virtualization', () => {
     const components = makeComponents(50);
     render(
       <ToolSection
@@ -110,27 +108,8 @@ describe('ToolSection — virtualization (50+ components)', () => {
         onToggleComponent={vi.fn()}
       />,
     );
-    // With 50 components, shouldVirtualize = true
     const list = screen.getByRole('list');
     expect(list).toBeInTheDocument();
-  });
-
-  it('uses non-virtualized list for fewer than 50 components', () => {
-    const components = makeComponents(49);
-    const { container } = render(
-      <ToolSection
-        toolId="claude-code"
-        components={components}
-        selectedComponentId={null}
-        onSelectComponent={vi.fn()}
-        onToggleComponent={vi.fn()}
-      />,
-    );
-
-    // Non-virtualized path: list has space-y-0.5 class, NOT the overflow-y-auto style
-    const list = container.querySelector('[role="list"]');
-    expect(list).toBeInTheDocument();
-    expect(list?.style.maxHeight).toBe('');
   });
 
   it('shows component count in header for large lists', () => {
@@ -147,7 +126,7 @@ describe('ToolSection — virtualization (50+ components)', () => {
     expect(screen.getByText('(60)')).toBeInTheDocument();
   });
 
-  it('virtualized list collapses and re-expands correctly', () => {
+  it('large list collapses and re-expands correctly', () => {
     const components = makeComponents(55);
     render(
       <ToolSection
@@ -167,38 +146,5 @@ describe('ToolSection — virtualization (50+ components)', () => {
 
     fireEvent.click(header); // expand
     expect(screen.getByRole('list')).toBeInTheDocument();
-  });
-
-  it('renders virtual items when element has scroll height (layout simulation)', () => {
-    // The virtualizer needs the scroll container to have height to produce items.
-    // We mock getBoundingClientRect to simulate a 600px tall container.
-    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = vi.fn().mockReturnValue({
-      width: 800,
-      height: 600,
-      top: 0,
-      left: 0,
-      bottom: 600,
-      right: 800,
-      x: 0,
-      y: 0,
-    });
-
-    const components = makeComponents(55);
-    const { container } = render(
-      <ToolSection
-        toolId="claude-code"
-        components={components}
-        selectedComponentId={null}
-        onSelectComponent={vi.fn()}
-        onToggleComponent={vi.fn()}
-      />,
-    );
-
-    // The virtualized list container should be rendered
-    const list = container.querySelector('[role="list"]');
-    expect(list).toBeInTheDocument();
-
-    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
   });
 });

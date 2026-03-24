@@ -24,7 +24,9 @@ function computeGroupCheckState(children: Component[], selectedIds: ComponentId[
   return { allSelected, someSelected, childIds };
 }
 
-const VIRTUALIZE_THRESHOLD = 50;
+// Virtualization threshold set high — nested scroll containers cause confusing
+// dual-scroll UX. 500+ simple cards render fine without virtualization.
+const VIRTUALIZE_THRESHOLD = 2000;
 const ESTIMATED_ROW_HEIGHT = 52;
 
 /** A group of components that belong to the same plugin */

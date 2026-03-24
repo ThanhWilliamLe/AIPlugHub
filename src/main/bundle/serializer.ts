@@ -69,8 +69,9 @@ export function deserializeBundle(json: string): Bundle {
 
   for (const p of plugins) {
     const plugin = p as Record<string, unknown>;
-    if (typeof plugin.name !== 'string') {
-      throw new AppError('BUNDLE_INVALID', 'Plugin must have a name', false);
+    // v1.7.0+: plugins use pluginKey + pluginName; legacy bundles used name
+    if (typeof plugin.pluginKey !== 'string' && typeof plugin.name !== 'string') {
+      throw new AppError('BUNDLE_INVALID', 'Plugin must have a pluginKey or name', false);
     }
     if (Array.isArray(plugin.components)) {
       for (const c of plugin.components) {
@@ -123,7 +124,11 @@ export function validatePortableComponent(c: Record<string, unknown>): void {
   // the prefix before writing to disk.
   const name = c.name as string;
   if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
-    throw new AppError('BUNDLE_INVALID', `Component name contains path traversal characters: ${name}`, false);
+    throw new AppError(
+      'BUNDLE_INVALID',
+      `Component name contains path traversal characters: ${name}`,
+      false,
+    );
   }
 }
 

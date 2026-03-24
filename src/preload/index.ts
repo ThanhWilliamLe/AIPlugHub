@@ -110,8 +110,8 @@ contextBridge.exposeInMainWorld('aiplughub', {
       return unwrap(result);
     },
 
-    async importBundle(components: unknown[], resolutions: unknown[]) {
-      const result = await ipcRenderer.invoke('bundles:import', components, resolutions);
+    async importBundle(components: unknown[], resolutions: unknown[], plugins?: unknown[]) {
+      const result = await ipcRenderer.invoke('bundles:import', components, resolutions, plugins);
       return unwrap(result);
     },
 

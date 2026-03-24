@@ -48,8 +48,11 @@ export type PortableComponent = {
 };
 
 export type PortablePlugin = {
-  name: string;
+  pluginKey: string;
+  pluginName: string;
+  marketplace: string;
   version?: string;
+  enabled: boolean;
   author?: { name: string; email?: string; url?: string };
   components: PortableComponent[];
 };

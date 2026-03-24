@@ -12,6 +12,7 @@ import type {
   ComponentType,
   Component,
   PortableComponent,
+  PortablePlugin,
   InstallTarget,
 } from '@shared/types';
 
@@ -34,6 +35,9 @@ export interface ToolAdapter {
 
   /** Scan a specific project folder for project-scope components (USR-03) */
   scanProject?(projectPath: string): Promise<Component[]>;
+
+  /** Install a full plugin with sub-components, registry entry, and enabled state (v1.7.0) */
+  installPlugin?(plugin: PortablePlugin): Promise<Component[]>;
 
   /** Cache/temp patterns to exclude when skipCaches is true (FEAT-02) */
   getCachePatterns(): string[];

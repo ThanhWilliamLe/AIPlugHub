@@ -34,12 +34,13 @@ export type ToolGroup = {
   totalCount: number; // all components (standalone + plugin + project)
 };
 
-/** Filter components by search query, tool filters, and type filters */
+/** Filter components by search query, tool filters, type filters, and scope filter */
 function filterComponents(
   components: Component[],
   searchQuery: string,
   toolFilters: ToolId[],
   typeFilters: ComponentType[],
+  scopeFilter: string | null,
 ): Component[] {
   let filtered = components;
 
@@ -49,6 +50,12 @@ function filterComponents(
 
   if (typeFilters.length > 0) {
     filtered = filtered.filter((c) => typeFilters.includes(c.id.type));
+  }
+
+  if (scopeFilter === 'plugin') {
+    filtered = filtered.filter((c) => c.id.scope === 'plugin');
+  } else if (scopeFilter === 'standalone') {
+    filtered = filtered.filter((c) => c.id.scope !== 'plugin');
   }
 
   if (searchQuery.trim()) {
@@ -194,13 +201,13 @@ function countByTool(components: Component[]): Map<ToolId, number> {
 
 export function useComponents() {
   const { tools, components, scanning } = useToolStore();
-  const { searchQuery, toolFilters, typeFilters } = useUiStore();
+  const { searchQuery, toolFilters, typeFilters, scopeFilter } = useUiStore();
 
   const detectedTools = useMemo(() => tools.filter((t) => t.detected), [tools]);
 
   const filteredComponents = useMemo(
-    () => filterComponents(components, searchQuery, toolFilters, typeFilters),
-    [components, searchQuery, toolFilters, typeFilters],
+    () => filterComponents(components, searchQuery, toolFilters, typeFilters, scopeFilter),
+    [components, searchQuery, toolFilters, typeFilters, scopeFilter],
   );
 
   const toolGroups = useMemo(
@@ -220,6 +227,16 @@ export function useComponents() {
   const typeCounts = useMemo(() => countByType(components), [components]);
   const toolCounts = useMemo(() => countByTool(components), [components]);
 
+  /** Scope counts — for scope filter pills */
+  const scopeCounts = useMemo(() => {
+    const counts = { plugin: 0, standalone: 0 };
+    for (const c of components) {
+      if (c.id.scope === 'plugin') counts.plugin++;
+      else counts.standalone++;
+    }
+    return counts;
+  }, [components]);
+
   /** Types that actually exist in the user's setup (for dynamic filter pills) */
   const activeTypes = useMemo(() => Array.from(typeCounts.keys()), [typeCounts]);
 
@@ -233,6 +250,7 @@ export function useComponents() {
     projectGroups,
     typeCounts,
     toolCounts,
+    scopeCounts,
     activeTypes,
     activeTools,
     totalCount: components.length,
@@ -240,6 +258,10 @@ export function useComponents() {
     scanning,
     hasComponents: components.length > 0,
     hasTools: detectedTools.length > 0,
-    isFiltered: searchQuery.trim() !== '' || toolFilters.length > 0 || typeFilters.length > 0,
+    isFiltered:
+      searchQuery.trim() !== '' ||
+      toolFilters.length > 0 ||
+      typeFilters.length > 0 ||
+      scopeFilter !== null,
   };
 }
