@@ -468,7 +468,7 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
           )?.id.tool ?? 'claude-code') as ToolId,
         };
 
-        const { version: appVersion } = require('../../../package.json');
+        const appVersion = deps.getAppVersion();
 
         const bundle = buildBundle(
           componentIds,

@@ -195,8 +195,9 @@ export const useCompareStore = create<CompareStoreState>((set) => ({
       // Filter to match the target scope
       let setupComponents: PortableComponent[];
       if (target.scope === 'user') {
+        // Include user + plugin scoped components for this tool (not project-scoped)
         setupComponents = allComponents
-          .filter((c) => c.id.tool === target.toolId && c.id.scope === 'user')
+          .filter((c) => c.id.tool === target.toolId && c.id.scope !== 'project')
           .map((c) => ({
             type: c.id.type,
             name: c.id.name,
@@ -214,14 +215,16 @@ export const useCompareStore = create<CompareStoreState>((set) => ({
           }));
       }
 
-      const diff = computeDiff(bundleComponents, setupComponents);
+      // Diff: setup is baseline (left), bundle is what's being compared (right)
+      // So "added" = in bundle but not setup, "removed" = in setup but not bundle
+      const diff = computeDiff(setupComponents, bundleComponents);
 
       const bundleName = bundle.name ?? bundlePath.split(/[/\\]/).pop() ?? 'Bundle';
 
       set({
         diffResult: diff,
-        leftLabel: bundleName,
-        rightLabel: target.scope === 'user' ? `My ${target.toolId} setup` : 'My project setup',
+        leftLabel: target.scope === 'user' ? `My ${target.toolId} setup` : 'My project setup',
+        rightLabel: bundleName,
         loading: false,
       });
     } catch (err) {
