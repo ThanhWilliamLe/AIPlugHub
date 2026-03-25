@@ -31,6 +31,7 @@ import type {
   BackupSummary,
   BackupCreateOptions,
   RestoreResult,
+  SuggestedSourcesManifest,
 } from '@shared/types';
 
 export type FileDialogOptions = {
@@ -72,6 +73,7 @@ export interface AiPlugHubAPI {
     install(ref: MarketplaceRef, target: BrowseInstallTarget): Promise<Component>;
     refreshSources(): Promise<void>;
     backfillInstalledFrom(): Promise<number>;
+    getSuggestedSources(): Promise<SuggestedSourcesManifest>;
   };
 
   plugins: {

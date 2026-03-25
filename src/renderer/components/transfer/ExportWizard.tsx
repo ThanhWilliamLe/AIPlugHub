@@ -8,19 +8,27 @@ import { useWizardStore } from '@renderer/stores/wizard-store';
 import { TOOL_META, COMPONENT_TYPE_META, PLUGIN_GROUP_META } from '@shared/constants';
 import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { Button } from '@renderer/components/ui/button';
-import { componentIdEquals, componentIdKey, isSensitiveEnvKey, isSensitiveEnvValue } from '@shared/utils';
-import type { Component, ComponentId, ToolId } from '@shared/types';
+import {
+  componentIdEquals,
+  componentIdKey,
+  isSensitiveEnvKey,
+  isSensitiveEnvValue,
+} from '@shared/utils';
+import type { Component, ComponentId, ToolId, BundleTarget, ProjectFolder } from '@shared/types';
+import { cn } from '@renderer/lib/utils';
 
 export function ExportWizard() {
   const components = useToolStore((s) => s.components);
   const tools = useToolStore((s) => s.tools);
   const {
     exportStep,
+    exportTarget,
     selectedIds,
     exportOptions,
     savedFilePath,
     loading,
     setExportStep,
+    setExportTarget,
     toggleSelectId,
     selectAll,
     setExportOptions,
@@ -32,6 +40,39 @@ export function ExportWizard() {
   const detectedTools = useMemo(() => tools.filter((t) => t.detected), [tools]);
   const [exportSearch, setExportSearch] = useState('');
   const [exportTypeFilters, setExportTypeFilters] = useState<Set<string>>(new Set());
+  const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
+
+  // Load project folders for Step 0
+  useEffect(() => {
+    window.aiplughub.projects
+      .list()
+      .then(setProjectFolders)
+      .catch(() => {});
+  }, []);
+
+  // Auto-select all components matching the export target when entering Step 1 (#23)
+  useEffect(() => {
+    if (exportStep === 1 && exportTarget && selectedIds.length === 0) {
+      let matching: Component[];
+      if (exportTarget.scope === 'user') {
+        matching = components.filter(
+          (c) => c.id.tool === exportTarget.toolId && c.id.scope !== 'project',
+        );
+      } else {
+        // Filter to the specific project by matching folder name from target
+        const targetName = exportTarget.projectName;
+        matching = components.filter((c) => {
+          if (!c.projectPath) return false;
+          const segments = c.projectPath.replace(/[\\/]+$/, '').split(/[\\/]/);
+          const folderName = segments[segments.length - 1] || '';
+          return folderName === targetName;
+        });
+      }
+      if (matching.length > 0) {
+        selectAll(matching.map((c) => c.id));
+      }
+    }
+  }, [exportStep, exportTarget]);
 
   const toggleExportTypeFilter = (type: string) => {
     setExportTypeFilters((prev) => {
@@ -82,7 +123,9 @@ export function ExportWizard() {
         toolComps = toolComps.filter((c) => exportTypeFilters.has(c.id.type));
       }
 
-      const standalone = toolComps.filter((c) => c.id.scope !== 'plugin' && c.id.scope !== 'project');
+      const standalone = toolComps.filter(
+        (c) => c.id.scope !== 'plugin' && c.id.scope !== 'project',
+      );
       const pluginComps = toolComps.filter((c) => c.id.scope === 'plugin');
       const projectComps = toolComps.filter((c) => c.id.scope === 'project');
 
@@ -113,7 +156,11 @@ export function ExportWizard() {
     const projectGroups: ProjectGroup[] = Array.from(projects.entries())
       .map(([path, comps]) => {
         const segments = path.replace(/[\\/]+$/, '').split(/[\\/]/);
-        return { projectPath: path, projectName: segments[segments.length - 1] || path, components: comps };
+        return {
+          projectPath: path,
+          projectName: segments[segments.length - 1] || path,
+          components: comps,
+        };
       })
       .sort((a, b) => a.projectName.localeCompare(b.projectName));
 
@@ -136,8 +183,7 @@ export function ExportWizard() {
   );
   const isFiltering = exportSearch.trim().length > 0 || exportTypeFilters.size > 0;
   const effectiveIds = isFiltering ? filteredIds : allIds;
-  const allSelected =
-    effectiveIds.length > 0 && effectiveIds.every((id) => isSelected(id));
+  const allSelected = effectiveIds.length > 0 && effectiveIds.every((id) => isSelected(id));
 
   // Secret and warning counts for review step
   const selectedComponents = useMemo(
@@ -216,9 +262,11 @@ export function ExportWizard() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-sand-border">
             <div>
               <h2 className="text-lg font-semibold text-sand-text">Export Bundle</h2>
-              <p className="text-xs text-sand-muted">Save your plugins to a file you can share or use as backup</p>
+              <p className="text-xs text-sand-muted">
+                Save your plugins to a file you can share or use as backup
+              </p>
               <div className="flex gap-2 mt-1">
-                {[1, 2, 3].map((s) => (
+                {[0, 1, 2, 3].map((s) => (
                   <span
                     key={s}
                     className={`w-2 h-2 rounded-full ${
@@ -243,6 +291,96 @@ export function ExportWizard() {
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-accent-destructive/10 text-accent-destructive text-sm">
                 {error}
+              </div>
+            )}
+
+            {/* Step 0: Scope Selection */}
+            {exportStep === 0 && (
+              <div className="space-y-4">
+                <p className="text-sm text-sand-secondary">What do you want to export?</p>
+
+                {/* User-scope options (one per detected tool) */}
+                <div className="space-y-2">
+                  <h4 className="text-xs text-sand-muted uppercase tracking-wider">Tool setups</h4>
+                  {detectedTools.map((tool) => {
+                    const meta = TOOL_META[tool.toolId];
+                    const toolCount = components.filter(
+                      (c) => c.id.tool === tool.toolId && c.id.scope !== 'project',
+                    ).length;
+                    return (
+                      <button
+                        key={tool.instanceId}
+                        type="button"
+                        className={cn(
+                          'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-sand-border',
+                          'hover:bg-sand-surface/60 hover:border-sand-border transition-all text-left',
+                        )}
+                        onClick={() => setExportTarget({ scope: 'user', toolId: tool.toolId })}
+                      >
+                        <span className="text-lg" aria-hidden="true">
+                          {meta.emoji}
+                        </span>
+                        <div>
+                          <div className="text-sm font-medium text-sand-text">{meta.label}</div>
+                          <div className="text-xs text-sand-muted">
+                            {toolCount} plugin{toolCount !== 1 ? 's' : ''} — user setup
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Project-scope options */}
+                {projectFolders.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs text-sand-muted uppercase tracking-wider">
+                      Project setups
+                    </h4>
+                    {projectFolders.map((folder) => {
+                      const segments = folder.path.replace(/[\\/]+$/, '').split(/[\\/]/);
+                      const name = segments[segments.length - 1] || folder.path;
+                      const projectCount = components.filter(
+                        (c) => c.projectPath === folder.path,
+                      ).length;
+                      const projectTools = [
+                        ...new Set(
+                          components
+                            .filter((c) => c.projectPath === folder.path)
+                            .map((c) => c.id.tool),
+                        ),
+                      ];
+                      return (
+                        <button
+                          key={folder.path}
+                          type="button"
+                          className={cn(
+                            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-sand-border',
+                            'hover:bg-sand-surface/60 hover:border-sand-border transition-all text-left',
+                          )}
+                          onClick={() =>
+                            setExportTarget({
+                              scope: 'project',
+                              projectName: name,
+                              tools: projectTools,
+                            })
+                          }
+                        >
+                          <span className="text-lg" aria-hidden="true">
+                            {'\u{1F4C1}'}
+                          </span>
+                          <div>
+                            <div className="text-sm font-medium text-sand-text">{name}</div>
+                            <div className="text-xs text-sand-muted">
+                              {projectCount} plugin{projectCount !== 1 ? 's' : ''} —{' '}
+                              {projectTools.map((t) => TOOL_META[t]?.label).join(', ')}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -288,7 +426,9 @@ export function ExportWizard() {
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-sand-secondary">
-                    {selectedIds.length} of {isFiltering ? `${effectiveIds.length} visible` : components.length} plugins selected
+                    {selectedIds.length} of{' '}
+                    {isFiltering ? `${effectiveIds.length} visible` : components.length} plugins
+                    selected
                   </span>
                   <button
                     type="button"
@@ -296,33 +436,38 @@ export function ExportWizard() {
                     onClick={() => {
                       if (allSelected) {
                         // Deselect only the currently visible items, keep the rest
-                        const visibleKeys = new Set(effectiveIds.map((id) =>
-                          `${id.tool}:${id.type}:${id.name}:${id.scope}`));
+                        const visibleKeys = new Set(
+                          effectiveIds.map((id) => `${id.tool}:${id.type}:${id.name}:${id.scope}`),
+                        );
                         const remaining = selectedIds.filter(
-                          (id) => !visibleKeys.has(`${id.tool}:${id.type}:${id.name}:${id.scope}`));
+                          (id) => !visibleKeys.has(`${id.tool}:${id.type}:${id.name}:${id.scope}`),
+                        );
                         selectAll(remaining);
                       } else {
                         // Add visible items to selection, keeping existing hidden selections
-                        const existingKeys = new Set(selectedIds.map((id) =>
-                          `${id.tool}:${id.type}:${id.name}:${id.scope}`));
+                        const existingKeys = new Set(
+                          selectedIds.map((id) => `${id.tool}:${id.type}:${id.name}:${id.scope}`),
+                        );
                         const newIds = effectiveIds.filter(
-                          (id) => !existingKeys.has(`${id.tool}:${id.type}:${id.name}:${id.scope}`));
+                          (id) => !existingKeys.has(`${id.tool}:${id.type}:${id.name}:${id.scope}`),
+                        );
                         selectAll([...selectedIds, ...newIds]);
                       }
                     }}
                   >
                     {allSelected
-                      ? isFiltering ? 'Deselect all visible' : 'Deselect all'
-                      : isFiltering ? 'Select all visible' : 'Select all'}
+                      ? isFiltering
+                        ? 'Deselect all visible'
+                        : 'Deselect all'
+                      : isFiltering
+                        ? 'Select all visible'
+                        : 'Select all'}
                   </button>
                 </div>
 
                 {toolGroups.map(({ toolId, plugins, standalone }) => {
                   const meta = TOOL_META[toolId];
-                  const allToolComps = [
-                    ...standalone,
-                    ...plugins.flatMap((p) => p.components),
-                  ];
+                  const allToolComps = [...standalone, ...plugins.flatMap((p) => p.components)];
                   const toolSelected = allToolComps.filter((c) => isSelected(c.id)).length;
                   const allToolSelected = toolSelected === allToolComps.length;
 
@@ -369,7 +514,8 @@ export function ExportWizard() {
                                 type="checkbox"
                                 checked={allPluginSelected}
                                 ref={(el) => {
-                                  if (el) el.indeterminate = somePluginSelected && !allPluginSelected;
+                                  if (el)
+                                    el.indeterminate = somePluginSelected && !allPluginSelected;
                                 }}
                                 onChange={() => {
                                   if (allPluginSelected) {
@@ -393,9 +539,7 @@ export function ExportWizard() {
                                 style={{ backgroundColor: PLUGIN_GROUP_META.color }}
                                 aria-hidden="true"
                               />
-                              <span className="font-mono text-sm truncate">
-                                {plugin.pluginKey}
-                              </span>
+                              <span className="font-mono text-sm truncate">{plugin.pluginKey}</span>
                               <span className="text-xs text-sand-muted">
                                 ({plugin.components.length})
                               </span>
@@ -511,18 +655,21 @@ export function ExportWizard() {
                   {selectedIds.length} plugin{selectedIds.length !== 1 ? 's' : ''} will be exported
                 </p>
                 {(() => {
-                  const targetTools = [...new Set(selectedComponents.map((c) => TOOL_META[c.id.tool]?.label ?? c.id.tool))];
+                  const targetTools = [
+                    ...new Set(
+                      selectedComponents.map((c) => TOOL_META[c.id.tool]?.label ?? c.id.tool),
+                    ),
+                  ];
                   return targetTools.length > 1 ? (
-                    <p className="text-xs text-sand-muted">
-                      Targets: {targetTools.join(', ')}
-                    </p>
+                    <p className="text-xs text-sand-muted">Targets: {targetTools.join(', ')}</p>
                   ) : null;
                 })()}
 
                 {secretCount > 0 && (
                   <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                    {'\u{1F512}'} {secretCount} password{secretCount !== 1 ? 's' : ''}/API key{secretCount !== 1 ? 's' : ''} will NOT be included for security.
-                    Anyone who imports this file will need to enter their own.
+                    {'\u{1F512}'} {secretCount} password{secretCount !== 1 ? 's' : ''}/API key
+                    {secretCount !== 1 ? 's' : ''} will NOT be included for security. Anyone who
+                    imports this file will need to enter their own.
                   </div>
                 )}
 
@@ -590,10 +737,14 @@ export function ExportWizard() {
                 <p className="text-2xl mb-2">{'\u2705'}</p>
                 <h3 className="text-lg font-semibold text-sand-text mb-2">Export complete!</h3>
                 <p className="text-sm text-sand-secondary">
-                  Your bundle has been saved. Share it with a teammate or use it on another computer.
+                  Your bundle has been saved. Share it with a teammate or use it on another
+                  computer.
                 </p>
                 {savedFilePath && (
-                  <p className="text-xs text-sand-muted font-mono mt-3 px-4 truncate" title={savedFilePath}>
+                  <p
+                    className="text-xs text-sand-muted font-mono mt-3 px-4 truncate"
+                    title={savedFilePath}
+                  >
                     {savedFilePath}
                   </p>
                 )}
@@ -603,10 +754,15 @@ export function ExportWizard() {
 
           {/* Footer */}
           <div className="flex justify-between px-6 py-4 border-t border-sand-border">
+            {exportStep === 0 && (
+              <Button variant="outline" size="sm" onClick={closeWizard}>
+                Cancel
+              </Button>
+            )}
             {exportStep === 1 && (
               <>
-                <Button variant="outline" size="sm" onClick={closeWizard}>
-                  Cancel
+                <Button variant="outline" size="sm" onClick={() => setExportStep(0)}>
+                  {'\u2190 Back'}
                 </Button>
                 <Button
                   className="bg-accent-olive text-white hover:bg-accent-olive/90"

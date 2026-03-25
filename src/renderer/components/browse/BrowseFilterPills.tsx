@@ -5,12 +5,19 @@
 
 import type { ToolId, ComponentType } from '@shared/types';
 import { TOOL_META, COMPONENT_TYPE_META } from '@shared/constants';
-import { useBrowseStore, useBrowseToolCounts, useBrowseTypeCounts } from '@renderer/stores/browse-store';
+import {
+  useBrowseStore,
+  useBrowseToolCounts,
+  useBrowseTypeCounts,
+} from '@renderer/stores/browse-store';
 import { cn } from '@renderer/lib/utils';
 
 /** Format a sourceId for display (title-case words) */
 function formatSourceName(sourceId: string): string {
-  return sourceId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return sourceId
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 /** Compute relative luminance and choose white or dark text for WCAG contrast */
@@ -25,9 +32,15 @@ function contrastTextColor(hexBg: string): string {
 
 export function BrowseFilterPills() {
   const {
-    toolFilters, typeFilters, sourceFilters,
-    toggleToolFilter, toggleTypeFilter, toggleSourceFilter,
-    clearFilters, searchQuery, entries,
+    toolFilters,
+    typeFilters,
+    sourceFilters,
+    toggleToolFilter,
+    toggleTypeFilter,
+    toggleSourceFilter,
+    clearFilters,
+    searchQuery,
+    entries,
   } = useBrowseStore();
   const toolCounts = useBrowseToolCounts();
   const typeCounts = useBrowseTypeCounts();
@@ -41,7 +54,10 @@ export function BrowseFilterPills() {
   const activeTools = Array.from(toolCounts.keys());
   const activeTypes = Array.from(typeCounts.keys());
   const isFiltered =
-    toolFilters.length > 0 || typeFilters.length > 0 || sourceFilters.length > 0 || searchQuery.trim() !== '';
+    toolFilters.length > 0 ||
+    typeFilters.length > 0 ||
+    sourceFilters.length > 0 ||
+    searchQuery.trim() !== '';
 
   if (activeTools.length === 0 && activeTypes.length === 0) return null;
 
@@ -71,71 +87,75 @@ export function BrowseFilterPills() {
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-      {/* Tool filters */}
-      {activeTools.map((toolId: ToolId) => {
-        const active = toolFilters.includes(toolId);
-        const meta = TOOL_META[toolId];
-        const count = toolCounts.get(toolId) ?? 0;
-        return (
+        {/* Tool filters (hidden when only one tool present) */}
+        {activeTools.length > 1 &&
+          activeTools.map((toolId: ToolId) => {
+            const active = toolFilters.includes(toolId);
+            const meta = TOOL_META[toolId];
+            const count = toolCounts.get(toolId) ?? 0;
+            return (
+              <button
+                key={toolId}
+                type="button"
+                onClick={() => toggleToolFilter(toolId)}
+                className={cn(
+                  'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+                  active
+                    ? 'bg-accent-olive text-white'
+                    : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
+                )}
+                aria-pressed={active}
+              >
+                <span aria-hidden="true">{meta.emoji}</span>
+                {meta.label}
+                <span className="opacity-70">({count})</span>
+              </button>
+            );
+          })}
+
+        {/* Separator */}
+        {activeTools.length > 1 && activeTypes.length > 0 && (
+          <span className="w-px h-4 bg-sand-border mx-1" aria-hidden="true" />
+        )}
+
+        {/* Type filters */}
+        {activeTypes.map((type: ComponentType) => {
+          const active = typeFilters.includes(type);
+          const meta = COMPONENT_TYPE_META[type];
+          const count = typeCounts.get(type) ?? 0;
+          return (
+            <button
+              key={type}
+              type="button"
+              onClick={() => toggleTypeFilter(type)}
+              className={cn(
+                'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+                active ? '' : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
+              )}
+              style={
+                active
+                  ? { backgroundColor: meta.color, color: contrastTextColor(meta.color) }
+                  : undefined
+              }
+              aria-pressed={active}
+              title={meta.tooltip}
+            >
+              {meta.label}
+              <span className="opacity-70">({count})</span>
+            </button>
+          );
+        })}
+
+        {/* Clear all */}
+        {isFiltered && (
           <button
-            key={toolId}
             type="button"
-            onClick={() => toggleToolFilter(toolId)}
-            className={cn(
-              'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
-              active
-                ? 'bg-accent-olive text-white'
-                : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
-            )}
-            aria-pressed={active}
+            onClick={clearFilters}
+            className="text-xs text-sand-muted hover:text-sand-secondary ml-1 underline-offset-2 hover:underline transition-colors"
           >
-            <span aria-hidden="true">{meta.emoji}</span>
-            {meta.label}
-            <span className="opacity-70">({count})</span>
+            Clear
           </button>
-        );
-      })}
-
-      {/* Separator */}
-      {activeTools.length > 0 && activeTypes.length > 0 && (
-        <span className="w-px h-4 bg-sand-border mx-1" aria-hidden="true" />
-      )}
-
-      {/* Type filters */}
-      {activeTypes.map((type: ComponentType) => {
-        const active = typeFilters.includes(type);
-        const meta = COMPONENT_TYPE_META[type];
-        const count = typeCounts.get(type) ?? 0;
-        return (
-          <button
-            key={type}
-            type="button"
-            onClick={() => toggleTypeFilter(type)}
-            className={cn(
-              'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
-              active ? '' : 'bg-sand-surface text-sand-secondary hover:bg-sand-surface/80',
-            )}
-            style={
-              active ? { backgroundColor: meta.color, color: contrastTextColor(meta.color) } : undefined
-            }
-            aria-pressed={active}
-          >
-            {meta.label}
-            <span className="opacity-70">({count})</span>
-          </button>
-        );
-      })}
-
-      {/* Clear all */}
-      {isFiltered && (
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="text-xs text-sand-muted hover:text-sand-secondary ml-1 underline-offset-2 hover:underline transition-colors"
-        >
-          Clear
-        </button>
-      )}
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 /**
  * Bundle Serializer tests — serialize/deserialize round-trip, validation.
+ * Updated for Bundle v2.0 format.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,13 +14,15 @@ import type { Bundle } from '@shared/types';
 
 function makeValidBundle(): Bundle {
   return {
-    formatVersion: '1.0',
+    formatVersion: '2.0',
     name: 'test-bundle',
     description: 'A test bundle',
+    target: { scope: 'user', toolId: 'claude-code' },
     exportedFrom: {
-      tools: ['claude-code'],
       date: '2026-03-19T00:00:00.000Z',
+      appVersion: '1.9.0',
     },
+    recommendedSources: [],
     plugins: [],
     components: [
       {
@@ -59,16 +62,44 @@ describe('deserializeBundle', () => {
 
   it('rejects missing formatVersion', () => {
     expect(() =>
-      deserializeBundle(JSON.stringify({ exportedFrom: { tools: [], date: '' } })),
+      deserializeBundle(JSON.stringify({ exportedFrom: { date: '', appVersion: '1.9.0' } })),
     ).toThrow('formatVersion');
   });
 
-  it('rejects incompatible major version', () => {
+  it('rejects v1.x bundles with version-specific message', () => {
     expect(() =>
       deserializeBundle(
         JSON.stringify({
-          formatVersion: '2.0',
+          formatVersion: '1.0',
           exportedFrom: { tools: [], date: '' },
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('no longer supported');
+  });
+
+  it('rejects v1.1 bundles with version-specific message', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '1.1',
+          exportedFrom: { tools: [], date: '' },
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('no longer supported');
+  });
+
+  it('rejects incompatible future major version', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '3.0',
+          target: { scope: 'user', toolId: 'claude-code' },
+          exportedFrom: { date: '', appVersion: '2.0.0' },
+          recommendedSources: [],
           components: [],
           plugins: [],
         }),
@@ -78,8 +109,96 @@ describe('deserializeBundle', () => {
 
   it('accepts compatible minor version', () => {
     const json = JSON.stringify({
-      formatVersion: '1.1',
-      exportedFrom: { tools: [], date: '2026-01-01' },
+      formatVersion: '2.1',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [],
+      components: [],
+      plugins: [],
+    });
+    expect(() => deserializeBundle(json)).not.toThrow();
+  });
+
+  it('rejects missing target', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          exportedFrom: { date: '', appVersion: '1.9.0' },
+          recommendedSources: [],
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('target');
+  });
+
+  it('rejects invalid target scope', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          target: { scope: 'global' },
+          exportedFrom: { date: '', appVersion: '1.9.0' },
+          recommendedSources: [],
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('Invalid target scope');
+  });
+
+  it('rejects user target without toolId', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          target: { scope: 'user' },
+          exportedFrom: { date: '', appVersion: '1.9.0' },
+          recommendedSources: [],
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('toolId');
+  });
+
+  it('rejects project target without projectName', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          target: { scope: 'project', tools: ['claude-code'] },
+          exportedFrom: { date: '', appVersion: '1.9.0' },
+          recommendedSources: [],
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('projectName');
+  });
+
+  it('rejects project target without tools array', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          target: { scope: 'project', projectName: 'my-project' },
+          exportedFrom: { date: '', appVersion: '1.9.0' },
+          recommendedSources: [],
+          components: [],
+          plugins: [],
+        }),
+      ),
+    ).toThrow('tools array');
+  });
+
+  it('accepts valid project target', () => {
+    const json = JSON.stringify({
+      formatVersion: '2.0',
+      target: { scope: 'project', projectName: 'my-project', tools: ['claude-code'] },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [],
       plugins: [],
     });
@@ -87,15 +206,22 @@ describe('deserializeBundle', () => {
   });
 
   it('rejects missing exportedFrom', () => {
-    expect(() => deserializeBundle(JSON.stringify({ formatVersion: '1.0' }))).toThrow(
-      'exportedFrom',
-    );
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '2.0',
+          target: { scope: 'user', toolId: 'claude-code' },
+        }),
+      ),
+    ).toThrow('exportedFrom');
   });
 
   it('rejects component without type', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [{ name: 'test', core: {} }],
       plugins: [],
     });
@@ -104,8 +230,10 @@ describe('deserializeBundle', () => {
 
   it('rejects component without name', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [{ type: 'skill', core: {} }],
       plugins: [],
     });
@@ -114,8 +242,10 @@ describe('deserializeBundle', () => {
 
   it('rejects component without core', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [{ type: 'skill', name: 'test' }],
       plugins: [],
     });
@@ -124,8 +254,10 @@ describe('deserializeBundle', () => {
 
   it('rejects duplicate component in both plugins and top-level', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [{ type: 'skill', name: 'dupe', core: { description: '', content: '' } }],
       plugins: [
         {
@@ -139,8 +271,10 @@ describe('deserializeBundle', () => {
 
   it('accepts valid bundle with plugins and components', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [{ type: 'mcp-server', name: 'a', core: { transport: 'stdio', command: 'a' } }],
       plugins: [
         {
@@ -158,30 +292,43 @@ describe('deserializeBundle', () => {
 
 describe('createBundle', () => {
   it('creates a bundle with correct format version', () => {
-    const bundle = createBundle('test', ['claude-code']);
+    const bundle = createBundle('test', { scope: 'user', toolId: 'claude-code' }, '1.9.0');
     expect(bundle.formatVersion).toBe(FORMAT_VERSION);
   });
 
-  it('includes tools and description', () => {
-    const bundle = createBundle('test', ['claude-code', 'claude-desktop'], 'My desc');
-    expect(bundle.exportedFrom.tools).toEqual(['claude-code', 'claude-desktop']);
+  it('includes target and description', () => {
+    const target = { scope: 'user' as const, toolId: 'claude-code' as const };
+    const bundle = createBundle('test', target, '1.9.0', 'My desc');
+    expect(bundle.target).toEqual(target);
     expect(bundle.description).toBe('My desc');
   });
 
+  it('includes appVersion in exportedFrom', () => {
+    const bundle = createBundle('test', { scope: 'user', toolId: 'claude-code' }, '1.9.0');
+    expect(bundle.exportedFrom.appVersion).toBe('1.9.0');
+  });
+
   it('includes a date string', () => {
-    const bundle = createBundle('test', []);
+    const bundle = createBundle('test', { scope: 'user', toolId: 'claude-code' }, '1.9.0');
     expect(bundle.exportedFrom.date).toBeTruthy();
     expect(new Date(bundle.exportedFrom.date).getTime()).not.toBeNaN();
   });
+
+  it('initializes recommendedSources as empty array', () => {
+    const bundle = createBundle('test', { scope: 'user', toolId: 'claude-code' }, '1.9.0');
+    expect(bundle.recommendedSources).toEqual([]);
+  });
 });
 
-// ─── v1.7.0: PortablePlugin with pluginKey (R1) ────────────────────
+// ─── v2.0: PortablePlugin with pluginKey (R1) ──────────────────────
 
-describe('deserializeBundle — v1.7.0 plugin format', () => {
-  it('accepts v1.7.0 plugin with pluginKey', () => {
+describe('deserializeBundle — plugin format', () => {
+  it('accepts plugin with pluginKey', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: '2026-03-24' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-03-24', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [],
       plugins: [
         {
@@ -208,8 +355,10 @@ describe('deserializeBundle — v1.7.0 plugin format', () => {
 
   it('accepts legacy plugin with name field (backwards compat)', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [],
       plugins: [
         {
@@ -224,18 +373,22 @@ describe('deserializeBundle — v1.7.0 plugin format', () => {
 
   it('rejects plugin without pluginKey or name', () => {
     const json = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [],
       plugins: [{ components: [] }],
     });
     expect(() => deserializeBundle(json)).toThrow('pluginKey or name');
   });
 
-  it('round-trips v1.7.0 bundle with plugins', () => {
+  it('round-trips bundle with plugins', () => {
     const bundle: Bundle = {
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: '2026-03-24T00:00:00.000Z' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-03-24T00:00:00.000Z', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [
         {
           pluginKey: 'test@market',
@@ -255,5 +408,22 @@ describe('deserializeBundle — v1.7.0 plugin format', () => {
     const json = serializeBundle(bundle);
     const parsed = deserializeBundle(json);
     expect(parsed).toEqual(bundle);
+  });
+});
+
+// ─── v1.x rejection ────────────────────────────────────────────────
+
+describe('deserializeBundle — v1.x rejection', () => {
+  it('rejects v1.0 bundle with BUNDLE_VERSION error code', () => {
+    expect(() =>
+      deserializeBundle(
+        JSON.stringify({
+          formatVersion: '1.0',
+          exportedFrom: { tools: [], date: '' },
+          plugins: [],
+          components: [],
+        }),
+      ),
+    ).toThrow('no longer supported');
   });
 });

@@ -17,3 +17,5 @@ export {
   AUTO_BACKUP_LABEL,
 } from './backup';
 export type { CachePatternEntry } from './backup';
+
+export { SUGGESTED_SOURCES_MANIFEST } from './suggested-sources';

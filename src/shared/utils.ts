@@ -163,3 +163,22 @@ export const SOURCE_TYPE_LABELS: Record<MarketplaceSourceType, string> = {
   'git-marketplace': 'GitHub Repository',
   'url-index': 'Custom URL',
 };
+
+/** Map common system errors to user-friendly messages (#26) */
+export function friendlyError(raw: string): { message: string; raw: string } {
+  const lower = raw.toLowerCase();
+  if (lower.includes('enoent') || lower.includes('spawn')) {
+    return { message: "A required program wasn't found on your computer.", raw };
+  }
+  if (
+    lower.includes('econnrefused') ||
+    lower.includes('etimedout') ||
+    lower.includes('fetch failed')
+  ) {
+    return { message: "Couldn't connect. Check your internet connection.", raw };
+  }
+  if (lower.includes('eacces') || lower.includes('eperm')) {
+    return { message: 'Permission denied. Try running as administrator.', raw };
+  }
+  return { message: 'Something went wrong during installation.', raw };
+}

@@ -13,17 +13,26 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildBundle } from '../bundle/export-builder';
+import { buildBundle as buildBundleRaw } from '../bundle/export-builder';
 import { serializeBundle, deserializeBundle, createBundle } from '../bundle/serializer';
 import { detectConflicts } from '../bundle/conflict-detector';
 import { createAdapterRegistry } from '../adapters/adapter-registry';
 import type { Component, ComponentId, PortableComponent, ToolDetectionResult } from '@shared/types';
+import type { BundleTarget } from '@shared/types';
+
+const _perfTarget: BundleTarget = { scope: 'user', toolId: 'claude-code' };
+function buildBundle(ids: any[], comps: any[], opts: any) {
+  return buildBundleRaw(ids, comps, opts, _perfTarget, '1.9.0');
+}
 import type { ToolAdapter } from '../adapters/tool-adapter';
 
 // ─── Test data factories ─────────────────────────────────────────────────────
 
 /** Build N installed components with unique names. */
-function makeComponents(count: number, tool: 'claude-code' | 'claude-desktop' = 'claude-code'): Component[] {
+function makeComponents(
+  count: number,
+  tool: 'claude-code' | 'claude-desktop' = 'claude-code',
+): Component[] {
   return Array.from({ length: count }, (_, i) => ({
     id: {
       tool,
@@ -116,7 +125,10 @@ describe('Performance benchmarks', () => {
     const elapsed = performance.now() - start;
 
     expect(result).toHaveLength(50);
-    expect(elapsed, `multi-adapter scanAll took ${elapsed.toFixed(1)} ms (budget: 2 000 ms)`).toBeLessThan(2000);
+    expect(
+      elapsed,
+      `multi-adapter scanAll took ${elapsed.toFixed(1)} ms (budget: 2 000 ms)`,
+    ).toBeLessThan(2000);
   });
 
   it('bundle export (buildBundle + serializeBundle) completes under 1 000 ms for 50 components', () => {
@@ -147,7 +159,9 @@ describe('Performance benchmarks', () => {
     const elapsed = performance.now() - start;
 
     expect(manifest.newComponents).toHaveLength(50);
-    expect(elapsed, `detectConflicts took ${elapsed.toFixed(1)} ms (budget: 500 ms)`).toBeLessThan(500);
+    expect(elapsed, `detectConflicts took ${elapsed.toFixed(1)} ms (budget: 500 ms)`).toBeLessThan(
+      500,
+    );
   });
 
   it('conflict detection with all conflicts completes under 500 ms for 50 vs 50', () => {
@@ -167,12 +181,20 @@ describe('Performance benchmarks', () => {
     const elapsed = performance.now() - start;
 
     expect(manifest.conflicts).toHaveLength(50);
-    expect(elapsed, `conflict classification took ${elapsed.toFixed(1)} ms (budget: 500 ms)`).toBeLessThan(500);
+    expect(
+      elapsed,
+      `conflict classification took ${elapsed.toFixed(1)} ms (budget: 500 ms)`,
+    ).toBeLessThan(500);
   });
 
   it('bundle serialisation round-trip completes under 100 ms for 50 components', () => {
     // Build a bundle directly (no component scanning) and round-trip it.
-    const bundle = createBundle('round-trip-test', ['claude-code'], 'perf test');
+    const bundle = createBundle(
+      'round-trip-test',
+      { scope: 'user', toolId: 'claude-code' },
+      '1.9.0',
+      'perf test',
+    );
     bundle.components = makePortableComponents(50);
 
     const start = performance.now();
@@ -196,6 +218,8 @@ describe('Performance benchmarks', () => {
     }
     const elapsed = performance.now() - start;
 
-    expect(elapsed, `10x export took ${elapsed.toFixed(1)} ms (budget: 1 000 ms)`).toBeLessThan(1000);
+    expect(elapsed, `10x export took ${elapsed.toFixed(1)} ms (budget: 1 000 ms)`).toBeLessThan(
+      1000,
+    );
   });
 });

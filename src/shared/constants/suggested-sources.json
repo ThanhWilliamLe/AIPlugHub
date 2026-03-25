@@ -1,0 +1,106 @@
+{
+  "version": 2,
+  "sources": [
+    {
+      "sourceId": "alirezarezvani-claude-skills",
+      "url": "https://github.com/alirezarezvani/claude-skills",
+      "displayName": "Claude Skills Collection",
+      "description": "192+ skills & agent plugins across engineering, marketing, product, compliance, and more — supports Claude Code, Codex, Gemini CLI, and Cursor",
+      "sourceType": "git-marketplace",
+      "tools": ["claude-code", "gemini-cli"],
+      "defaultChecked": true
+    },
+    {
+      "sourceId": "jeremylongshore-plugins-plus-skills",
+      "url": "https://github.com/jeremylongshore/claude-code-plugins-plus-skills",
+      "displayName": "Plugins + Skills (1300+)",
+      "description": "340 plugins and 1367 agent skills with CCPI package manager, interactive tutorials, and production orchestration patterns",
+      "sourceType": "git-marketplace",
+      "tools": ["claude-code", "gemini-cli"],
+      "defaultChecked": false
+    },
+    {
+      "sourceId": "ananddtyagi-cc-marketplace",
+      "url": "https://github.com/ananddtyagi/cc-marketplace",
+      "displayName": "CC Marketplace",
+      "description": "Community-driven marketplace with 110+ specialized agents and commands for development workflows",
+      "sourceType": "git-marketplace",
+      "tools": ["claude-code"],
+      "defaultChecked": true
+    },
+    {
+      "sourceId": "ccplugins-awesome",
+      "url": "https://github.com/ccplugins/awesome-claude-code-plugins",
+      "displayName": "Awesome Claude Code Plugins",
+      "description": "Curated collection of slash commands, subagents, MCP servers, and hooks for Claude Code",
+      "sourceType": "git-marketplace",
+      "tools": ["claude-code"],
+      "defaultChecked": false
+    }
+  ],
+  "featured": [
+    {
+      "name": "superpowers",
+      "description": "Brainstorming, subagent-driven development, debugging, and TDD practices",
+      "sourceId": "claude-plugins-official",
+      "ref": "superpowers",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "playwright",
+      "description": "Browser automation and end-to-end testing by Microsoft for web interactions",
+      "sourceId": "claude-plugins-official",
+      "ref": "playwright",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "context7",
+      "description": "Up-to-date documentation lookup from source repositories via Upstash Context7",
+      "sourceId": "claude-plugins-official",
+      "ref": "context7",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "frontend-design",
+      "description": "Create production-grade frontend interfaces with high design quality",
+      "sourceId": "claude-plugins-official",
+      "ref": "frontend-design",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "chrome-devtools-mcp",
+      "description": "Control live Chrome browser, record traces, analyze network requests, automate actions",
+      "sourceId": "claude-plugins-official",
+      "ref": "chrome-devtools-mcp",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "code-review",
+      "description": "Automated code review for pull requests using multiple specialized agents",
+      "sourceId": "claude-plugins-official",
+      "ref": "code-review",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "commit-commands",
+      "description": "Git commit workflows including commits, pushes, and PR creation",
+      "sourceId": "claude-plugins-official",
+      "ref": "commit-commands",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "plugin-dev",
+      "description": "Comprehensive toolkit for developing your own Claude Code plugins",
+      "sourceId": "claude-plugins-official",
+      "ref": "plugin-dev",
+      "tools": ["claude-code"]
+    },
+    {
+      "name": "skill-creator",
+      "description": "Create new skills, improve existing ones, and measure skill performance",
+      "sourceId": "claude-plugins-official",
+      "ref": "skill-creator",
+      "tools": ["claude-code"]
+    }
+  ]
+}

@@ -65,7 +65,7 @@ export type UiStoreState = {
 };
 
 export const useUiStore = create<UiStoreState>((set) => ({
-  activeTab: 'my-setup',
+  activeTab: 'browse',
   searchQuery: '',
   toolFilters: [],
   typeFilters: [],

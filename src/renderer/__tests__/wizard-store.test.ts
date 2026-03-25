@@ -49,10 +49,10 @@ describe('startExport', () => {
     expect(useWizardStore.getState().activeWizard).toBe('export');
   });
 
-  it('resets exportStep to 1', () => {
+  it('resets exportStep to 0 (scope selection)', () => {
     useWizardStore.setState({ exportStep: 3 });
     useWizardStore.getState().startExport();
-    expect(useWizardStore.getState().exportStep).toBe(1);
+    expect(useWizardStore.getState().exportStep).toBe(0);
   });
 
   it('clears selectedIds', () => {
@@ -173,8 +173,10 @@ describe('startImport', () => {
   it('clears bundle and conflicts', () => {
     useWizardStore.setState({
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: [], date: '' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },
@@ -382,7 +384,7 @@ describe('closeWizard', () => {
     });
     useWizardStore.getState().closeWizard();
     const state = useWizardStore.getState();
-    expect(state.exportStep).toBe(1);
+    expect(state.exportStep).toBe(0);
     expect(state.selectedIds).toEqual([]);
     expect(state.exportOptions).toEqual({});
     expect(state.exportedJson).toBeNull();
@@ -392,8 +394,10 @@ describe('closeWizard', () => {
     useWizardStore.setState({
       importStep: 2,
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: [], date: '' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },
@@ -474,8 +478,10 @@ describe('executeImport -- with no configs', () => {
     incompatible: [],
   };
   const bundle = {
-    formatVersion: '1.0',
-    exportedFrom: { tools: [] as string[], date: '2026-01-01' },
+    formatVersion: '2.0',
+    target: { scope: 'user', toolId: 'claude-code' },
+    exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+    recommendedSources: [],
     plugins: [],
     components: [newComponent],
   };
@@ -609,8 +615,10 @@ describe('executeImport -- with pending configs', () => {
   };
 
   const bundle = {
-    formatVersion: '1.0',
-    exportedFrom: { tools: [] as string[], date: '2026-01-01' },
+    formatVersion: '2.0',
+    target: { scope: 'user', toolId: 'claude-code' },
+    exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+    recommendedSources: [],
     plugins: [],
     components: [componentWithConfig],
   };

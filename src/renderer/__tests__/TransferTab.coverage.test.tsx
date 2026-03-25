@@ -26,8 +26,10 @@ describe('TransferTab — import file picker', () => {
   it('loads bundle when openFileDialog returns a file path', async () => {
     vi.mocked(window.aiplughub.system.openFileDialog).mockResolvedValue('/tmp/my.aibundle');
     vi.mocked(window.aiplughub.bundles.parseFile).mockResolvedValue({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [],
     });
@@ -62,9 +64,7 @@ describe('TransferTab — import file picker', () => {
   });
 
   it('closes wizard when openFileDialog throws', async () => {
-    vi.mocked(window.aiplughub.system.openFileDialog).mockRejectedValue(
-      new Error('Dialog error'),
-    );
+    vi.mocked(window.aiplughub.system.openFileDialog).mockRejectedValue(new Error('Dialog error'));
 
     const user = userEvent.setup();
     render(<TransferTab />);

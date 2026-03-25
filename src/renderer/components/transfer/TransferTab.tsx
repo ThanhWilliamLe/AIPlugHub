@@ -1,11 +1,13 @@
 /**
- * Transfer tab — landing page with Export/Import entry points + wizard modals.
+ * Transfer tab — landing page with Export/Import/Compare entry points + wizard modals.
  */
 
 import { useCallback } from 'react';
 import { useWizardStore } from '@renderer/stores/wizard-store';
+import { useCompareStore } from '@renderer/stores/compare-store';
 import { ExportWizard } from './ExportWizard';
 import { ImportWizard } from './ImportWizard';
+import { CompareWizard } from './CompareWizard';
 import { Button } from '@renderer/components/ui/button';
 
 export function TransferTab() {
@@ -13,6 +15,8 @@ export function TransferTab() {
   const startExport = useWizardStore((s) => s.startExport);
   const startImport = useWizardStore((s) => s.startImport);
   const loadBundle = useWizardStore((s) => s.loadBundle);
+  const compareActive = useCompareStore((s) => s.active);
+  const startCompare = useCompareStore((s) => s.startCompare);
 
   const handleImport = useCallback(async () => {
     startImport();
@@ -37,7 +41,7 @@ export function TransferTab() {
 
   return (
     <div className="flex items-center justify-center h-full px-8">
-      <div className="flex gap-6 max-w-2xl w-full">
+      <div className="flex gap-6 max-w-3xl w-full">
         {/* Export card */}
         <div className="flex-1 rounded-xl border border-sand-border bg-sand-surface/30 p-8 text-center hover:scale-[1.01] transition-transform">
           <h2 className="text-lg font-semibold text-sand-text mb-2">Export your setup</h2>
@@ -65,11 +69,26 @@ export function TransferTab() {
             {'Import \u2192'}
           </Button>
         </div>
+
+        {/* Compare card */}
+        <div className="flex-1 rounded-xl border border-sand-border bg-sand-surface/30 p-8 text-center hover:scale-[1.01] transition-transform">
+          <h2 className="text-lg font-semibold text-sand-text mb-2">Compare</h2>
+          <p className="text-sm text-sand-secondary mb-6">
+            Compare two bundles or check a bundle against your setup
+          </p>
+          <Button
+            className="bg-accent-olive text-white hover:bg-accent-olive/90"
+            onClick={startCompare}
+          >
+            {'Compare \u2192'}
+          </Button>
+        </div>
       </div>
 
       {/* Wizard modals */}
       {activeWizard === 'export' && <ExportWizard />}
       {activeWizard === 'import' && <ImportWizard />}
+      {compareActive && <CompareWizard />}
     </div>
   );
 }

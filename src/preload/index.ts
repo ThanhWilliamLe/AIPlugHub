@@ -147,6 +147,11 @@ contextBridge.exposeInMainWorld('aiplughub', {
       const result = await ipcRenderer.invoke('browse:backfillInstalledFrom');
       return unwrap(result);
     },
+
+    async getSuggestedSources() {
+      const result = await ipcRenderer.invoke('browse:getSuggestedSources');
+      return unwrap(result);
+    },
   },
 
   // ─── Settings (Sources) ──────────────────────────────────────────

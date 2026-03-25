@@ -829,7 +829,7 @@ describe('bundles:export', () => {
     if (result.ok) {
       const parsed = JSON.parse(result.data);
       expect(parsed.name).toBe('my-bundle');
-      expect(parsed.formatVersion).toBe('1.0');
+      expect(parsed.formatVersion).toBe('2.0');
       expect(Array.isArray(parsed.components)).toBe(true);
     }
   });
@@ -984,9 +984,11 @@ describe('bundles:parse (security boundary)', () => {
 describe('bundles:detectConflicts', () => {
   function makeBundle(components: PortableComponent[] = []): Bundle {
     return {
-      formatVersion: '1.0',
+      formatVersion: '2.0',
       name: 'test',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       components,
       plugins: [],
     };
@@ -1054,9 +1056,11 @@ describe('bundles:detectConflicts', () => {
 
   it('includes components from plugins in conflict detection', async () => {
     const bundle: Bundle = {
-      formatVersion: '1.0',
+      formatVersion: '2.0',
       name: 'with-plugins',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       components: [],
       plugins: [
         {
@@ -1393,7 +1397,7 @@ describe('bundles:save', () => {
     // that's fine — we're verifying the handler gets past the dialog and tries the write.
     const result = (await mockIpcMain.getHandler('bundles:save')(
       mockEvent,
-      '{"formatVersion":"1.0"}',
+      '{"formatVersion":"2.0"}',
       'test-bundle',
     )) as IpcResult<string | null>;
 
@@ -2402,6 +2406,8 @@ describe('handler registration', () => {
       'browse:getDetail',
       'browse:install',
       'browse:refreshSources',
+      'browse:backfillInstalledFrom',
+      'browse:getSuggestedSources',
       'settings:getSources',
       'settings:addSource',
       'settings:updateSource',
@@ -2436,7 +2442,7 @@ describe('handler registration', () => {
 
   it('registers exactly the expected number of channels', () => {
     const registeredChannels = mockIpcMain.handle.mock.calls.map((c: unknown[]) => c[0]);
-    expect(registeredChannels).toHaveLength(46);
+    expect(registeredChannels).toHaveLength(47);
   });
 });
 

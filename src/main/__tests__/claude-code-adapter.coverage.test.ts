@@ -109,10 +109,7 @@ describe('normalizeMcpCore — via scan', () => {
   });
 
   it('handles mcpServers key missing from .claude.json', async () => {
-    await writeFile(
-      join(tempDir, '.claude.json'),
-      JSON.stringify({ otherConfig: true }),
-    );
+    await writeFile(join(tempDir, '.claude.json'), JSON.stringify({ otherConfig: true }));
     const components = await adapter.scan();
     expect(components.filter((c) => c.id.type === 'mcp-server')).toEqual([]);
   });
@@ -229,9 +226,7 @@ describe('scanHooks — agent handler type', () => {
       join(rootPath, 'settings.json'),
       JSON.stringify({
         hooks: {
-          PostToolUse: [
-            { hooks: 'not-an-array' },
-          ],
+          PostToolUse: [{ hooks: 'not-an-array' }],
         },
       }),
     );
@@ -343,10 +338,9 @@ describe('installSkill — with tool extensions', () => {
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    const content = await (await import('fs/promises')).readFile(
-      join(rootPath, 'skills', 'ext-skill', 'SKILL.md'),
-      'utf-8',
-    );
+    const content = await (
+      await import('fs/promises')
+    ).readFile(join(rootPath, 'skills', 'ext-skill', 'SKILL.md'), 'utf-8');
     expect(content).toContain('disable-model-invocation: true');
     expect(content).toContain('user-invocable: false');
     expect(content).toContain('argument-hint: <path>');
@@ -552,8 +546,8 @@ describe('getConfigPath', () => {
   it('returns rootPath for unknown type', () => {
     const path = adapter.getConfigPath({
       tool: 'claude-code',
-      type: 'lsp-server',
-      name: 'some-lsp',
+      type: 'output-style',
+      name: 'some-style',
       scope: 'user',
     });
     expect(path).toBe(rootPath);

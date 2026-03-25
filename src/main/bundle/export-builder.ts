@@ -3,15 +3,19 @@
  * Reads components from store, strips secrets, generates warnings.
  */
 
+import os from 'node:os';
 import type {
   Component,
   ComponentId,
   PortableComponent,
   PortablePlugin,
   Bundle,
+  BundleTarget,
+  RecommendedSource,
   ExportOptions,
   ToolId,
   ConfigRequirement,
+  MarketplaceSourceConfig,
 } from '@shared/types';
 import { componentIdEquals, isSensitiveEnvKey, isSensitiveEnvValue } from '@shared/utils';
 import { createBundle } from './serializer';
@@ -110,20 +114,25 @@ export function buildBundle(
   selectedIds: ComponentId[],
   allComponents: Component[],
   options: ExportOptions,
+  target: BundleTarget,
+  appVersion: string,
+  marketplaceSources?: Map<string, { sourceId: string; url: string }>,
+  userSources?: MarketplaceSourceConfig[],
 ): Bundle {
   const selected = allComponents.filter((c) =>
     selectedIds.some((id) => componentIdEquals(c.id, id)),
   );
 
-  // Collect tools involved
-  const toolSet = new Set<ToolId>();
-  for (const c of selected) {
-    toolSet.add(c.id.tool);
-  }
-
   const bundleName = options.name || `my-setup-${new Date().toISOString().slice(0, 10)}`;
 
-  const bundle = createBundle(bundleName, Array.from(toolSet), options.description);
+  const bundle = createBundle(bundleName, target, appVersion, options.description);
+
+  // Set machine hostname
+  try {
+    bundle.exportedFrom.machine = os.hostname();
+  } catch {
+    // best-effort
+  }
 
   // Separate plugin-scope components from standalone components
   const pluginComponents: Component[] = [];
@@ -152,19 +161,53 @@ export function buildBundle(
   }
 
   bundle.plugins = Array.from(pluginMap.entries()).map(([pluginKey, { components, ext }]) => {
+    const marketplace = (ext.marketplace as string) ?? '';
     const plugin: PortablePlugin = {
       pluginKey,
       pluginName: (ext.pluginName as string) ?? pluginKey,
-      marketplace: (ext.marketplace as string) ?? '',
+      marketplace,
       version: (ext.pluginVersion as string) ?? undefined,
       enabled: (ext.pluginEnabled as boolean) ?? true,
       components: components.map(toPortable),
     };
+
+    // Attach marketplace source URL for re-download
+    if (marketplaceSources && marketplace) {
+      const src = marketplaceSources.get(marketplace);
+      if (src) {
+        plugin.marketplaceSource = { sourceId: src.sourceId, url: src.url };
+      }
+    }
+
     return plugin;
   });
 
   // Standalone (non-plugin) components go flat
   bundle.components = standaloneComponents.map(toPortable);
+
+  // Derive recommended sources from plugins' marketplace source refs (#27)
+  if (userSources && userSources.length > 0) {
+    const sourceIds = new Set<string>();
+    for (const p of bundle.plugins) {
+      if (p.marketplaceSource?.sourceId) sourceIds.add(p.marketplaceSource.sourceId);
+    }
+    for (const c of bundle.components) {
+      if (c.marketplaceSource?.sourceId) sourceIds.add(c.marketplaceSource.sourceId);
+    }
+    const recommended: RecommendedSource[] = [];
+    for (const id of sourceIds) {
+      const src = userSources.find((s) => s.sourceId === id);
+      if (src) {
+        recommended.push({
+          sourceId: id,
+          url: src.url,
+          displayName: src.displayName ?? id,
+          sourceType: src.sourceType as 'git-marketplace' | 'url-index',
+        });
+      }
+    }
+    bundle.recommendedSources = recommended;
+  }
 
   // Warn if some selected components were not found (stale selection)
   if (selected.length < selectedIds.length) {

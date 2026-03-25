@@ -3,7 +3,7 @@
  * Uses local state for responsive typing + debounced store update.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { useUiStore } from '@renderer/stores/ui-store';
 
 const DEBOUNCE_MS = 200;
@@ -33,6 +33,18 @@ export function SearchBar() {
     timerRef.current = setTimeout(() => setSearchQuery(value), DEBOUNCE_MS);
   };
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      if (localQuery) {
+        setLocalQuery('');
+        setSearchQuery('');
+      } else {
+        inputRef.current?.blur();
+      }
+    }
+  };
+
   // Cleanup timer on unmount
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
@@ -47,9 +59,10 @@ export function SearchBar() {
       <input
         ref={inputRef}
         type="search"
-        placeholder="Search plugins...  (Ctrl+K)"
+        placeholder="Search plugins...  (Ctrl+K / Ctrl+F)"
         value={localQuery}
         onChange={(e) => handleChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         className="w-full pl-9 pr-3 py-2 rounded-lg bg-sand-surface/50 border border-sand-border
                    text-sm text-sand-text placeholder:text-sand-muted
                    focus:outline-none focus:ring-2 focus:ring-accent-olive/40 focus:bg-sand-surface

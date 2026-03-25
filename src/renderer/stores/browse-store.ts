@@ -14,10 +14,20 @@ import type {
   ToolId,
   ComponentType,
 } from '@shared/types';
+import { friendlyError } from '@shared/utils';
 import { useToolStore } from './tool-store';
 import { useToastStore } from './toast-store';
 
 export type BrowseSortBy = 'relevance' | 'name' | 'updated' | 'popularity';
+
+/** Compare two MarketplaceRefs for equality */
+export function marketplaceRefEquals(a: MarketplaceRef, b: MarketplaceRef): boolean {
+  return a.sourceId === b.sourceId && a.ref === b.ref;
+}
+
+export function marketplaceRefKey(ref: MarketplaceRef): string {
+  return `${ref.sourceId}:${ref.ref}`;
+}
 
 export type BrowseStoreState = {
   // Data
@@ -45,6 +55,11 @@ export type BrowseStoreState = {
   installError: string | null;
   lastInstalledRef: MarketplaceRef | null;
 
+  // Selection state (multi-select parity with My Setup)
+  browseSelectionMode: boolean;
+  browseSelectedRefs: MarketplaceRef[];
+  lastToggledIndex: number;
+
   // Actions
   loadEntries: () => Promise<void>;
   setSearchQuery: (query: string) => void;
@@ -59,6 +74,13 @@ export type BrowseStoreState = {
   refresh: () => Promise<void>;
   clearError: () => void;
   clearInstallError: () => void;
+
+  // Selection actions
+  enterBrowseSelectionMode: () => void;
+  exitBrowseSelectionMode: () => void;
+  toggleBrowseSelectRef: (ref: MarketplaceRef, index?: number) => void;
+  setBrowseSelectedRefs: (refs: MarketplaceRef[]) => void;
+  clearBrowseSelection: () => void;
 };
 
 /** Fuse.js search options — matches spec §4 search behavior */
@@ -91,6 +113,9 @@ export const useBrowseStore = create<BrowseStoreState>((set, get) => ({
   installingRef: null,
   installError: null,
   lastInstalledRef: null,
+  browseSelectionMode: false,
+  browseSelectedRefs: [],
+  lastToggledIndex: -1,
 
   loadEntries: async () => {
     set({ isLoading: true, error: null });
@@ -170,9 +195,10 @@ export const useBrowseStore = create<BrowseStoreState>((set, get) => ({
         type: 'success',
       });
     } catch (err) {
-      const message =
+      const raw =
         err instanceof Error ? err.message : String((err as { message?: string }).message ?? err);
-      set({ installingRef: null, installError: message, lastInstalledRef: ref });
+      const friendly = friendlyError(raw);
+      set({ installingRef: null, installError: friendly.message, lastInstalledRef: ref });
     }
   },
 
@@ -189,6 +215,24 @@ export const useBrowseStore = create<BrowseStoreState>((set, get) => ({
 
   clearError: () => set({ error: null }),
   clearInstallError: () => set({ installError: null }),
+
+  // Selection actions
+  enterBrowseSelectionMode: () => set({ browseSelectionMode: true }),
+  exitBrowseSelectionMode: () =>
+    set({ browseSelectionMode: false, browseSelectedRefs: [], lastToggledIndex: -1 }),
+  toggleBrowseSelectRef: (ref, index) =>
+    set((state) => {
+      const exists = state.browseSelectedRefs.some((r) => marketplaceRefEquals(r, ref));
+      return {
+        browseSelectionMode: true,
+        browseSelectedRefs: exists
+          ? state.browseSelectedRefs.filter((r) => !marketplaceRefEquals(r, ref))
+          : [...state.browseSelectedRefs, ref],
+        lastToggledIndex: index ?? state.lastToggledIndex,
+      };
+    }),
+  setBrowseSelectedRefs: (refs) => set({ browseSelectedRefs: refs }),
+  clearBrowseSelection: () => set({ browseSelectedRefs: [] }),
 }));
 
 // ─── Derived Selectors ──────────────────────────────────────────────

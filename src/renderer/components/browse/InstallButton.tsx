@@ -5,12 +5,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type {
-  ToolId,
-  BrowseInstallTarget,
-  MarketplaceRef,
-  ProjectFolder,
-} from '@shared/types';
+import type { ToolId, BrowseInstallTarget, MarketplaceRef, ProjectFolder } from '@shared/types';
 import { TOOL_META } from '@shared/constants';
 import { useToolStore } from '@renderer/stores/tool-store';
 import { useUiStore } from '@renderer/stores/ui-store';
@@ -95,9 +90,7 @@ export function InstallButton({
   // Auto-select first compatible tool if no saved target or saved target is incompatible
   const effectiveTarget = useMemo((): BrowseInstallTarget | null => {
     if (savedTarget) {
-      const isCompatible = detectedCompatible.some(
-        (t) => t.instanceId === savedTarget.instanceId,
-      );
+      const isCompatible = detectedCompatible.some((t) => t.instanceId === savedTarget.instanceId);
       if (isCompatible) {
         // Validate project-scope target: ensure the path is still registered
         if (savedTarget.scope.startsWith('project:')) {
@@ -124,7 +117,10 @@ export function InstallButton({
   // Load project folders when dropdown opens
   useEffect(() => {
     if (!showDropdown) return;
-    window.aiplughub.projects.list().then(setProjectFolders).catch(() => {});
+    window.aiplughub.projects
+      .list()
+      .then(setProjectFolders)
+      .catch(() => {});
   }, [showDropdown]);
 
   // Close dropdown on outside click
@@ -142,19 +138,16 @@ export function InstallButton({
     return () => document.removeEventListener('mousedown', handler);
   }, [showDropdown]);
 
-  const selectTarget = useCallback(
-    async (instanceId: string, scope: string) => {
-      const target: BrowseInstallTarget = { instanceId, scope };
-      setSavedTarget(target);
-      setShowDropdown(false);
-      try {
-        await window.aiplughub.preferences.set({ browseInstallTarget: target });
-      } catch {
-        // best-effort persist
-      }
-    },
-    [],
-  );
+  const selectTarget = useCallback(async (instanceId: string, scope: string) => {
+    const target: BrowseInstallTarget = { instanceId, scope };
+    setSavedTarget(target);
+    setShowDropdown(false);
+    try {
+      await window.aiplughub.preferences.set({ browseInstallTarget: target });
+    } catch {
+      // best-effort persist
+    }
+  }, []);
 
   const handleInstall = useCallback(() => {
     if (!effectiveTarget) return;
@@ -230,6 +223,22 @@ export function InstallButton({
 
   const currentLabel = effectiveTarget ? targetLabel(effectiveTarget, tools) : 'Select location';
 
+  // Simple button when only one compatible tool (no need for location picker)
+  const singleTarget = detectedCompatible.length <= 1;
+
+  if (singleTarget) {
+    return (
+      <Button
+        size="sm"
+        className="bg-accent-olive text-white hover:bg-accent-olive/90"
+        onClick={handleInstall}
+        disabled={!effectiveTarget}
+      >
+        Install
+      </Button>
+    );
+  }
+
   return (
     <div className="relative inline-flex items-stretch" ref={triggerRef}>
       {/* Install button with sub-text */}
@@ -244,9 +253,7 @@ export function InstallButton({
         disabled={!effectiveTarget}
       >
         <span className="text-sm leading-tight">Install</span>
-        <span className="text-[10px] leading-tight opacity-80 font-normal">
-          {currentLabel}
-        </span>
+        <span className="text-[10px] leading-tight opacity-80 font-normal">{currentLabel}</span>
       </Button>
 
       {/* Location selector dropdown trigger */}
@@ -291,8 +298,7 @@ export function InstallButton({
           {detectedCompatible.map((tool) => {
             const meta = TOOL_META[tool.toolId];
             const isSelected =
-              effectiveTarget?.instanceId === tool.instanceId &&
-              effectiveTarget?.scope === 'user';
+              effectiveTarget?.instanceId === tool.instanceId && effectiveTarget?.scope === 'user';
             return (
               <button
                 key={tool.instanceId}

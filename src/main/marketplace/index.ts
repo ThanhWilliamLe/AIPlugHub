@@ -4,3 +4,7 @@ export { MarketplaceCache } from './cache';
 export { GitMarketplaceSource } from './git-marketplace-source';
 export { UrlIndexSource } from './url-index-source';
 export type { MarketplaceSource, FetchOptions } from './marketplace-source';
+export {
+  fetchSuggestedSources,
+  invalidateSuggestedSourcesCache,
+} from './suggested-sources-fetcher';

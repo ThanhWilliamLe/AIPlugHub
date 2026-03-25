@@ -12,6 +12,7 @@ import { InstallButton } from './InstallButton';
 import { cn } from '@renderer/lib/utils';
 import type { ComponentType } from '@shared/types';
 import { TOOL_META } from '@shared/constants';
+import { isEntryInstalled, findInstalledVersion } from '@renderer/lib/install-match';
 
 export function BrowseDetailPanel() {
   const selectedRef = useBrowseStore((s) => s.selectedRef);
@@ -98,14 +99,8 @@ export function BrowseDetailPanel() {
             <InstallButton
               ref_={selectedRef}
               compatibleTools={entry.tools}
-              isInstalled={installedComponents.some(
-                (c) => c.id.name === entry.name && entry.tools.includes(c.id.tool),
-              )}
-              installedVersion={
-                installedComponents.find(
-                  (c) => c.id.name === entry.name && entry.tools.includes(c.id.tool),
-                )?.version
-              }
+              isInstalled={isEntryInstalled(installedComponents, entry)}
+              installedVersion={findInstalledVersion(installedComponents, entry)}
             />
           )}
 

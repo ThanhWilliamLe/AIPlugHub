@@ -35,10 +35,7 @@ import type {
 
 // ─── Timing helpers ─────────────────────────────────────────────────────────
 
-function measureOps(
-  count: number,
-  fn: (i: number) => void,
-): { totalMs: number; avgMs: number } {
+function measureOps(count: number, fn: (i: number) => void): { totalMs: number; avgMs: number } {
   const start = performance.now();
   for (let i = 0; i < count; i++) fn(i);
   const totalMs = performance.now() - start;
@@ -622,19 +619,15 @@ describe('Endurance: Renderer Stores', () => {
       },
     );
 
-    it(
-      'setSelectedIds: handles large arrays without truncation',
-      { timeout: 30_000 },
-      () => {
-        // setSelectedIds accepts the full array. Verify no truncation occurs.
-        const largeInput = Array.from({ length: CHURN_CYCLES }, (_, i) => makeComponentId(i));
+    it('setSelectedIds: handles large arrays without truncation', { timeout: 30_000 }, () => {
+      // setSelectedIds accepts the full array. Verify no truncation occurs.
+      const largeInput = Array.from({ length: CHURN_CYCLES }, (_, i) => makeComponentId(i));
 
-        for (let i = 0; i < 50; i++) {
-          useUiStore.getState().setSelectedIds(largeInput);
-          expect(useUiStore.getState().selectedIds.length).toBe(CHURN_CYCLES);
-        }
-      },
-    );
+      for (let i = 0; i < 50; i++) {
+        useUiStore.getState().setSelectedIds(largeInput);
+        expect(useUiStore.getState().selectedIds.length).toBe(CHURN_CYCLES);
+      }
+    });
 
     it(
       'toggleSelectId: array stays bounded and duplicate-free after 500 toggle cycles',
@@ -824,7 +817,7 @@ describe('Endurance: Renderer Stores', () => {
 
           const afterOpen = useWizardStore.getState();
           expect(afterOpen.activeWizard).toBe('export');
-          expect(afterOpen.exportStep).toBe(1);
+          expect(afterOpen.exportStep).toBe(0);
           expect(afterOpen.selectedIds).toEqual([]);
           expect(afterOpen.exportedJson).toBeNull();
           expect(afterOpen.error).toBeNull();
@@ -844,7 +837,7 @@ describe('Endurance: Renderer Stores', () => {
           // All wizard state must be fully cleared
           const afterClose = useWizardStore.getState();
           expect(afterClose.activeWizard).toBeNull();
-          expect(afterClose.exportStep).toBe(1);
+          expect(afterClose.exportStep).toBe(0);
           expect(afterClose.selectedIds).toEqual([]);
           expect(afterClose.exportedJson).toBeNull();
           expect(afterClose.exportOptions).toEqual({});
@@ -957,9 +950,8 @@ describe('Endurance: Renderer Stores', () => {
         for (let cycle = 0; cycle < WIZARD_CYCLES; cycle++) {
           getState().startExport();
 
-          const ids = Array.from(
-            { length: 10 + (cycle % 40) },
-            (_, i) => makeComponentId(cycle * 100 + i),
+          const ids = Array.from({ length: 10 + (cycle % 40) }, (_, i) =>
+            makeComponentId(cycle * 100 + i),
           );
           getState().selectAll(ids);
           expect(useWizardStore.getState().selectedIds.length).toBe(ids.length);

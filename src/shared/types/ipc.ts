@@ -23,6 +23,7 @@ export type IpcError = {
 export type ExportOptions = {
   name?: string;
   description?: string;
+  target?: import('./bundles').BundleTarget;
 };
 
 export type SearchFilters = {
@@ -85,4 +86,8 @@ export type UserPreferences = {
   projectFolders?: ProjectFolder[];
   /** Last-selected install target in Browse tab (reuses BrowseInstallTarget shape) */
   browseInstallTarget?: import('./marketplace').BrowseInstallTarget;
+  /** Whether the user has dismissed the Getting Started section (UX-09) */
+  gettingStartedDismissed?: boolean;
+  /** Whether the user has opened the Getting Started guide at least once (stops bounce animation) */
+  guideViewed?: boolean;
 };

@@ -336,13 +336,16 @@ describe('install', () => {
     expect(window.aiplughub.tools.scanAll).toHaveBeenCalled();
   });
 
-  it('sets installError on failure', async () => {
+  it('sets installError with friendly message on failure', async () => {
     const ref = makeRef();
     vi.mocked(window.aiplughub.browse.install).mockRejectedValueOnce(new Error('install failed'));
 
     await useBrowseStore.getState().install(ref, installTarget);
 
-    expect(useBrowseStore.getState().installError).toBe('install failed');
+    // friendlyError maps unknown errors to generic message
+    expect(useBrowseStore.getState().installError).toBe(
+      'Something went wrong during installation.',
+    );
   });
 
   it('clears installingRef on failure', async () => {
@@ -363,24 +366,26 @@ describe('install', () => {
     expect(useBrowseStore.getState().lastInstalledRef).toEqual(ref);
   });
 
-  it('handles non-Error thrown from install using String fallback', async () => {
+  it('maps ENOENT errors to friendly message', async () => {
     const ref = makeRef();
-    vi.mocked(window.aiplughub.browse.install).mockRejectedValueOnce({
-      message: 'obj install error',
-    });
+    vi.mocked(window.aiplughub.browse.install).mockRejectedValueOnce(new Error('spawn npx ENOENT'));
 
     await useBrowseStore.getState().install(ref, installTarget);
 
-    expect(useBrowseStore.getState().installError).toBe('obj install error');
+    expect(useBrowseStore.getState().installError).toBe(
+      "A required program wasn't found on your computer.",
+    );
   });
 
-  it('handles thrown value with no message from install via String coercion', async () => {
+  it('maps non-Error thrown values to friendly message', async () => {
     const ref = makeRef();
     vi.mocked(window.aiplughub.browse.install).mockRejectedValueOnce(false);
 
     await useBrowseStore.getState().install(ref, installTarget);
 
-    expect(useBrowseStore.getState().installError).toBe('false');
+    expect(useBrowseStore.getState().installError).toBe(
+      'Something went wrong during installation.',
+    );
   });
 });
 

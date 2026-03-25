@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type {
   ComponentId,
   Bundle,
+  BundleTarget,
   ConflictManifest,
   ConflictResolution,
   ImportResult,
@@ -16,7 +17,7 @@ import type {
 } from '@shared/types';
 import { componentIdKey } from '@shared/utils';
 
-export type ExportStep = 1 | 2 | 3;
+export type ExportStep = 0 | 1 | 2 | 3;
 export type ImportStep = 1 | 2;
 
 /** Config prompt entry — one per required sensitive config across all components to install */
@@ -31,6 +32,7 @@ export type WizardStoreState = {
 
   // Export state
   exportStep: ExportStep;
+  exportTarget: BundleTarget | null;
   selectedIds: ComponentId[];
   exportOptions: ExportOptions;
   exportedJson: string | null;
@@ -44,6 +46,8 @@ export type WizardStoreState = {
   alwaysOverride: boolean;
   importResult: ImportResult | null;
   importing: boolean;
+  importProjectPath: string | null;
+  acceptedSourceIds: string[];
 
   // Config prompt state (H1: required config prompts at import time)
   pendingConfigs: PendingConfig[];
@@ -59,6 +63,7 @@ export type WizardStoreState = {
   // Export actions
   startExport: () => void;
   startExportWithSelection: (ids: ComponentId[]) => void;
+  setExportTarget: (target: BundleTarget) => void;
   setExportStep: (step: ExportStep) => void;
   toggleSelectId: (id: ComponentId) => void;
   selectAll: (ids: ComponentId[]) => void;
@@ -72,6 +77,8 @@ export type WizardStoreState = {
   setImportStep: (step: ImportStep) => void;
   setResolution: (resolution: ConflictResolution) => void;
   setAlwaysOverride: (value: boolean) => void;
+  setImportProjectPath: (path: string) => void;
+  setAcceptedSourceIds: (ids: string[]) => void;
   executeImport: () => Promise<void>;
   setConfigValue: (key: string, value: string) => void;
   confirmConfigs: () => Promise<void>;
@@ -154,7 +161,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
 
   return {
     activeWizard: null,
-    exportStep: 1,
+    exportStep: 0,
+    exportTarget: null,
     selectedIds: [],
     exportOptions: {},
     exportedJson: null,
@@ -166,6 +174,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     alwaysOverride: false,
     importResult: null,
     importing: false,
+    importProjectPath: null,
+    acceptedSourceIds: [],
     pendingConfigs: [],
     configValues: {},
     componentsToInstall: [],
@@ -177,7 +187,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     startExport: () =>
       set({
         activeWizard: 'export',
-        exportStep: 1,
+        exportStep: 0,
+        exportTarget: null,
         selectedIds: [],
         exportOptions: {},
         exportedJson: null,
@@ -189,12 +200,15 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       set({
         activeWizard: 'export',
         exportStep: 1,
+        exportTarget: null,
         selectedIds: ids,
         exportOptions: {},
         exportedJson: null,
         savedFilePath: null,
         error: null,
       }),
+
+    setExportTarget: (target) => set({ exportTarget: target, exportStep: 1, selectedIds: [] }),
 
     setExportStep: (exportStep) => set({ exportStep }),
 
@@ -217,12 +231,14 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       set((state) => ({ exportOptions: { ...state.exportOptions, ...options } })),
 
     buildAndSave: async () => {
-      const { selectedIds, exportOptions } = get();
+      const { selectedIds, exportOptions, exportTarget } = get();
       if (selectedIds.length === 0) return;
+      // Merge export target into options for IPC
+      const mergedOptions = { ...exportOptions, target: exportTarget ?? undefined };
 
       set({ loading: true, error: null });
       try {
-        const json = await window.aiplughub.bundles.exportBundle(selectedIds, exportOptions);
+        const json = await window.aiplughub.bundles.exportBundle(selectedIds, mergedOptions);
         const bundleName = exportOptions.name || buildDefaultFilename(selectedIds);
         const savedPath = await window.aiplughub.bundles.saveBundle(json, bundleName);
 
@@ -247,6 +263,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         alwaysOverride: false,
         importResult: null,
         importing: false,
+        importProjectPath: null,
+        acceptedSourceIds: [],
         pendingConfigs: [],
         configValues: {},
         componentsToInstall: [],
@@ -309,6 +327,10 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         return { alwaysOverride, resolutions };
       }),
 
+    setImportProjectPath: (importProjectPath) => set({ importProjectPath }),
+
+    setAcceptedSourceIds: (acceptedSourceIds) => set({ acceptedSourceIds }),
+
     // Fix H1: check for required configs before installing
     executeImport: async () => {
       const { bundle, conflicts, resolutions } = get();
@@ -343,6 +365,25 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         return;
       }
 
+      // Add accepted recommended sources before installing
+      const { acceptedSourceIds, bundle: b } = get();
+      if (acceptedSourceIds.length > 0 && b?.recommendedSources) {
+        for (const srcId of acceptedSourceIds) {
+          const src = b.recommendedSources.find((s) => s.sourceId === srcId);
+          if (src) {
+            try {
+              await window.aiplughub.settings.addSource({
+                sourceType: src.sourceType,
+                url: src.url,
+                displayName: src.displayName,
+              });
+            } catch {
+              // Best-effort — don't block import if source add fails
+            }
+          }
+        }
+      }
+
       // No configs needed — install directly
       await doInstall(toInstall, pluginsForImport);
     },
@@ -362,7 +403,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
     closeWizard: () =>
       set({
         activeWizard: null,
-        exportStep: 1,
+        exportStep: 0,
         selectedIds: [],
         exportOptions: {},
         exportedJson: null,
@@ -374,6 +415,8 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         alwaysOverride: false,
         importResult: null,
         importing: false,
+        importProjectPath: null,
+        acceptedSourceIds: [],
         pendingConfigs: [],
         configValues: {},
         componentsToInstall: [],

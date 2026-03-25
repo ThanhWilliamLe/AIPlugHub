@@ -76,6 +76,15 @@ export type PromptCore = {
   arguments?: { name: string; description?: string }[];
 };
 
+export type LspServerCore = {
+  /** Binary command to launch the LSP server */
+  command: string;
+  /** CLI arguments passed to the command */
+  args?: string[];
+  /** Maps file extensions to LSP language identifiers */
+  extensionToLanguage: Record<string, string>;
+};
+
 export type SkeletonCore = {
   rawConfig?: unknown;
   rawTypeName?: string;
@@ -89,7 +98,7 @@ export type CoreSchemaMap = {
   hook: HookCore;
   agent: AgentCore;
   'context-file': SkeletonCore;
-  'lsp-server': SkeletonCore;
+  'lsp-server': LspServerCore;
   'output-style': SkeletonCore;
   prompt: PromptCore;
   unknown: SkeletonCore;
@@ -233,6 +242,10 @@ export function isAgent(c: Component): c is Component & { core: AgentCore } {
 
 export function isPrompt(c: Component): c is Component & { core: PromptCore } {
   return c.id.type === 'prompt';
+}
+
+export function isLspServer(c: Component): c is Component & { core: LspServerCore } {
+  return c.id.type === 'lsp-server';
 }
 
 // ─── Native Plugin (plugin system integration) ──────────────────────

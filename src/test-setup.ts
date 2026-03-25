@@ -20,8 +20,10 @@ const mockAiPlugHubAPI = {
   bundles: {
     exportBundle: vi.fn().mockResolvedValue('{}'),
     parseFile: vi.fn().mockResolvedValue({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [],
     }),
@@ -41,6 +43,11 @@ const mockAiPlugHubAPI = {
     install: vi.fn().mockResolvedValue({}),
     refreshSources: vi.fn().mockResolvedValue(undefined),
     backfillInstalledFrom: vi.fn().mockResolvedValue(0),
+    getSuggestedSources: vi.fn().mockResolvedValue({
+      version: 2,
+      sources: [],
+      featured: [],
+    }),
   },
   settings: {
     getSources: vi.fn().mockResolvedValue([]),

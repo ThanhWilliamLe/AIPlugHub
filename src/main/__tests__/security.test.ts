@@ -17,10 +17,16 @@ import { resolve } from 'path';
 
 // ─── Bundle layer imports ────────────────────────────────────────────────────
 
-import { buildBundle } from '../bundle/export-builder';
+import { buildBundle as buildBundleRaw } from '../bundle/export-builder';
 import { serializeBundle, deserializeBundle } from '../bundle/serializer';
 import { isSensitiveEnvKey, isSensitiveEnvValue } from '@shared/utils';
 import type { Component, ComponentId, PortableComponent, Bundle } from '@shared/types';
+import type { BundleTarget } from '@shared/types';
+
+const _secTarget: BundleTarget = { scope: 'user', toolId: 'claude-code' };
+function buildBundle(ids: any[], comps: any[], opts: any, mktsrc?: any) {
+  return buildBundleRaw(ids, comps, opts, _secTarget, '1.9.0', mktsrc);
+}
 import { AppError } from '@shared/types';
 
 // ─── IPC layer imports (re-use the same harness pattern as ipc-handlers.test.ts) ─
@@ -223,8 +229,10 @@ beforeEach(() => {
 describe('Input validation — path traversal in component names', () => {
   it('rejects a component with a Unix path traversal name via deserializeBundle', () => {
     const maliciousBundle = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -255,8 +263,10 @@ describe('Input validation — path traversal in component names', () => {
 
   it('rejects a component with a Windows path traversal name via deserializeBundle', () => {
     const maliciousBundle = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -282,8 +292,10 @@ describe('Input validation — path traversal in component names', () => {
     // JSON.parse strips null bytes in strings — this should not produce
     // undefined behaviour regardless of whether the serializer is hardened.
     const withNullByte = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -312,8 +324,10 @@ describe('Input validation — path traversal in component names', () => {
 describe('Input validation — JSON prototype pollution', () => {
   it('rejects a component named __proto__ with BUNDLE_INVALID', () => {
     const pollutionBundle = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -334,8 +348,10 @@ describe('Input validation — JSON prototype pollution', () => {
 
   it('rejects a component named constructor with BUNDLE_INVALID', () => {
     const pollutionBundle = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -356,8 +372,10 @@ describe('Input validation — JSON prototype pollution', () => {
 
   it('rejects a component named prototype with BUNDLE_INVALID', () => {
     const pollutionBundle = JSON.stringify({
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'], date: new Date().toISOString() },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: new Date().toISOString(), appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [
         {
@@ -389,7 +407,7 @@ describe('Input validation — JSON prototype pollution', () => {
     expect(before).toBe(false);
     expect(after).toBe(false);
     // Belt-and-suspenders: ensure a fresh plain object does not carry the property.
-    expect((({}) as Record<string, unknown>)['injected']).toBeUndefined();
+    expect(({} as Record<string, unknown>)['injected']).toBeUndefined();
   });
 });
 
@@ -508,13 +526,17 @@ describe('Input validation — URL scheme injection for source URLs', () => {
       install: vi.fn(),
       refreshSources: vi.fn(),
       getSources: vi.fn().mockResolvedValue([]),
-      addSource: vi.fn().mockResolvedValue({ id: 'new', url: 'https://ok.example.com', name: 'OK', enabled: true }),
+      addSource: vi
+        .fn()
+        .mockResolvedValue({ id: 'new', url: 'https://ok.example.com', name: 'OK', enabled: true }),
       updateSource: vi.fn(),
       removeSource: vi.fn(),
       init: vi.fn().mockResolvedValue(undefined),
     };
     mockIpcMain = createMockIpcMain();
-    registerIpcHandlers(makeDeps({ marketplace: marketplaceWithAddSource as unknown as HandlerDeps['marketplace'] }));
+    registerIpcHandlers(
+      makeDeps({ marketplace: marketplaceWithAddSource as unknown as HandlerDeps['marketplace'] }),
+    );
 
     const config: NewSourceConfig = { url: 'https://ok.example.com', name: 'OK' };
     const result = (await invoke('settings:addSource', config)) as IpcResult<unknown>;
@@ -564,19 +586,19 @@ describe('Secret handling — isSensitiveEnvKey covers required patterns', () =>
 
 describe('Secret handling — isSensitiveEnvValue covers known secret prefixes', () => {
   const secretValues = [
-    'sk-proj-abcdef1234',         // OpenAI
-    'ghp_abc123def456',           // GitHub PAT (classic)
-    'ghs_abc123def456',           // GitHub service token
-    'github_pat_abc123',          // GitHub fine-grained PAT
-    'xoxb-1234-5678-abcd',        // Slack bot token
-    'xoxp-1234-5678-abcd',        // Slack user token
-    'AIzaSyAbcdef1234',           // Google API key
-    'AKIAIOSFODNN7EXAMPLE',       // AWS access key
-    'eyJhbGciOiJIUzI1NiJ9',      // JWT
-    'whsec_abcdef1234',           // Stripe webhook secret
-    'sk_live_abcdef1234',         // Stripe live secret key
-    'pk_live_abcdef1234',         // Stripe live publishable key
-    'rk_live_abcdef1234',         // Stripe restricted key
+    'sk-proj-abcdef1234', // OpenAI
+    'ghp_abc123def456', // GitHub PAT (classic)
+    'ghs_abc123def456', // GitHub service token
+    'github_pat_abc123', // GitHub fine-grained PAT
+    'xoxb-1234-5678-abcd', // Slack bot token
+    'xoxp-1234-5678-abcd', // Slack user token
+    'AIzaSyAbcdef1234', // Google API key
+    'AKIAIOSFODNN7EXAMPLE', // AWS access key
+    'eyJhbGciOiJIUzI1NiJ9', // JWT
+    'whsec_abcdef1234', // Stripe webhook secret
+    'sk_live_abcdef1234', // Stripe live secret key
+    'pk_live_abcdef1234', // Stripe live publishable key
+    'rk_live_abcdef1234', // Stripe restricted key
   ];
 
   for (const value of secretValues) {
@@ -729,10 +751,7 @@ describe('Secret handling — GitHub token isolation from DataStore', () => {
 // a running Electron process.
 
 describe('Electron hardening — BrowserWindow webPreferences', () => {
-  const mainSource = readFileSync(
-    resolve(__dirname, '../../main/index.ts'),
-    'utf-8',
-  );
+  const mainSource = readFileSync(resolve(__dirname, '../../main/index.ts'), 'utf-8');
 
   it('sets contextIsolation: true', () => {
     expect(mainSource).toMatch(/contextIsolation\s*:\s*true/);
@@ -753,15 +772,15 @@ describe('Electron hardening — BrowserWindow webPreferences', () => {
     expect(mainSource).toMatch(/onHeadersReceived/);
   });
 
-  it('uses default-src \'self\' in the production CSP', () => {
+  it("uses default-src 'self' in the production CSP", () => {
     expect(mainSource).toMatch(/default-src 'self'/);
   });
 
-  it('restricts script-src to \'self\' in the production CSP (no unsafe-eval)', () => {
+  it("restricts script-src to 'self' in the production CSP (no unsafe-eval)", () => {
     // Production branch must not include unsafe-eval.
     // We verify the production CSP string does not contain unsafe-eval.
     // (Dev CSP may allow unsafe-inline for HMR but not unsafe-eval.)
-    expect(mainSource).not.toContain("unsafe-eval");
+    expect(mainSource).not.toContain('unsafe-eval');
   });
 
   it('prevents navigation to external origins via will-navigate handler', () => {

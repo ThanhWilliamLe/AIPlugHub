@@ -4,8 +4,28 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildBundle } from '../bundle/export-builder';
-import type { Component, ComponentId, ExportOptions } from '@shared/types';
+import { buildBundle as buildBundleRaw } from '../bundle/export-builder';
+import type { Component, ComponentId, ExportOptions, BundleTarget } from '@shared/types';
+
+const DEFAULT_TARGET: BundleTarget = { scope: 'user', toolId: 'claude-code' };
+const DEFAULT_APP_VERSION = '1.9.0';
+
+/** Test wrapper with default target + appVersion */
+function buildBundle(
+  ids: ComponentId[],
+  components: Component[],
+  options: ExportOptions,
+  marketplaceSources?: Map<string, { sourceId: string; url: string }>,
+) {
+  return buildBundleRaw(
+    ids,
+    components,
+    options,
+    DEFAULT_TARGET,
+    DEFAULT_APP_VERSION,
+    marketplaceSources,
+  );
+}
 
 function makeComponent(overrides: Partial<Component> & { id: ComponentId }): Component {
   return {
@@ -49,18 +69,16 @@ describe('buildBundle', () => {
     expect(bundle.description).toBe('Team setup');
   });
 
-  it('collects source tools from selected components', () => {
-    const components: Component[] = [
-      makeComponent({ id: { ...baseId, tool: 'claude-code', name: 'a' } }),
-      makeComponent({ id: { ...baseId, tool: 'claude-desktop', name: 'b' } }),
-    ];
-    const bundle = buildBundle(
-      components.map((c) => c.id),
-      components,
-      {},
-    );
-    expect(bundle.exportedFrom.tools).toContain('claude-code');
-    expect(bundle.exportedFrom.tools).toContain('claude-desktop');
+  it('uses the provided target', () => {
+    const target: BundleTarget = { scope: 'user', toolId: 'gemini-cli' };
+    const bundle = buildBundleRaw([], [], {}, target, '1.9.0');
+    expect(bundle.target).toEqual(target);
+  });
+
+  it('sets appVersion and recommendedSources from args', () => {
+    const bundle = buildBundleRaw([], [], {}, DEFAULT_TARGET, '1.9.0');
+    expect(bundle.exportedFrom.appVersion).toBe('1.9.0');
+    expect(bundle.recommendedSources).toEqual([]);
   });
 });
 
@@ -333,5 +351,50 @@ describe('buildBundle — plugin grouping (R1)', () => {
     const bundle = buildBundle([standaloneId], components, {});
     expect(bundle.plugins).toHaveLength(0);
     expect(bundle.components).toHaveLength(1);
+  });
+
+  it('populates marketplaceSource on plugin from marketplace sources map', () => {
+    const components = [makePluginComponent(pluginSkillId)];
+    const marketplaceSources = new Map([
+      ['workflows', { sourceId: 'workflows', url: 'https://github.com/wshobson/agents' }],
+    ]);
+    const bundle = buildBundle([pluginSkillId], components, {}, marketplaceSources);
+
+    expect(bundle.plugins[0].marketplaceSource).toEqual({
+      sourceId: 'workflows',
+      url: 'https://github.com/wshobson/agents',
+    });
+  });
+
+  it('omits marketplaceSource when marketplace not in sources map', () => {
+    const components = [makePluginComponent(pluginSkillId)];
+    const bundle = buildBundle([pluginSkillId], components, {});
+
+    expect(bundle.plugins[0].marketplaceSource).toBeUndefined();
+  });
+
+  it('omits marketplaceSource when plugin has empty marketplace string', () => {
+    const emptyMktId: ComponentId = {
+      tool: 'claude-code',
+      type: 'skill',
+      name: 'local-plugin/my-skill',
+      scope: 'plugin',
+    };
+    const comp = makeComponent({
+      id: emptyMktId,
+      extensions: {
+        pluginKey: 'local-plugin',
+        pluginName: 'local-plugin',
+        marketplace: '',
+        pluginVersion: '1.0.0',
+        pluginEnabled: true,
+      },
+      core: { description: 'test', content: '# test' },
+    });
+    const marketplaceSources = new Map([
+      ['', { sourceId: '', url: 'https://should-not-match.com' }],
+    ]);
+    const bundle = buildBundle([emptyMktId], [comp], {}, marketplaceSources);
+    expect(bundle.plugins[0].marketplaceSource).toBeUndefined();
   });
 });

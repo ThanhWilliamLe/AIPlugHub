@@ -54,20 +54,37 @@ export type PortablePlugin = {
   version?: string;
   enabled: boolean;
   author?: { name: string; email?: string; url?: string };
+  /** Marketplace source URL — used by importer to re-download the plugin */
+  marketplaceSource?: { sourceId: string; url: string };
   components: PortableComponent[];
 };
 
-// ─── Bundle ──────────────────────────────────────────────────────────
+// ─── Bundle v2.0 ────────────────────────────────────────────────────
+
+/** Scoped bundle target — each bundle targets exactly one tool or one project */
+export type BundleTarget =
+  | { scope: 'user'; toolId: ToolId }
+  | { scope: 'project'; projectName: string; tools: ToolId[] };
+
+/** Marketplace source recommendation carried in the bundle */
+export type RecommendedSource = {
+  sourceId: string;
+  url: string;
+  displayName: string;
+  sourceType: 'git-marketplace' | 'url-index';
+};
 
 export type Bundle = {
   formatVersion: string;
   name?: string;
   description?: string;
+  target: BundleTarget;
   exportedFrom: {
-    tools: ToolId[];
     machine?: string;
     date: string;
+    appVersion: string;
   };
+  recommendedSources: RecommendedSource[];
   plugins: PortablePlugin[];
   components: PortableComponent[];
 };

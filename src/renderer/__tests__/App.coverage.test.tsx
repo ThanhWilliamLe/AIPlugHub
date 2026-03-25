@@ -31,8 +31,10 @@ function resetStores() {
   vi.mocked(window.aiplughub.tools.detect).mockResolvedValue([]);
   vi.mocked(window.aiplughub.tools.scanAll).mockResolvedValue([]);
   vi.mocked(window.aiplughub.bundles.parseFile).mockResolvedValue({
-    formatVersion: '1.0',
-    exportedFrom: { tools: [], date: '' },
+    formatVersion: '2.0',
+    target: { scope: 'user', toolId: 'claude-code' },
+    exportedFrom: { date: '', appVersion: '1.9.0' },
+    recommendedSources: [],
     plugins: [],
     components: [],
   });

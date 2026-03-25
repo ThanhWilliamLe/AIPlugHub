@@ -28,8 +28,10 @@ beforeEach(() => {
 describe('loadBundle — success', () => {
   it('sets bundle, conflicts, and resolutions on success', async () => {
     const mockBundle = {
-      formatVersion: '1.0',
-      exportedFrom: { tools: ['claude-code'] as string[], date: '2026-01-01' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [],
     };
@@ -39,7 +41,12 @@ describe('loadBundle — success', () => {
         {
           incoming: makePortable({ name: 'conflict-comp', version: '2.0' }),
           existing: {
-            id: { tool: 'claude-code' as const, type: 'mcp-server' as const, name: 'conflict-comp', scope: 'user' as const },
+            id: {
+              tool: 'claude-code' as const,
+              type: 'mcp-server' as const,
+              name: 'conflict-comp',
+              scope: 'user' as const,
+            },
             enabled: true,
             tracking: 'detected' as const,
             core: { transport: 'stdio' as const, command: 'old' },
@@ -49,7 +56,12 @@ describe('loadBundle — success', () => {
         {
           incoming: makePortable({ name: 'identical-comp' }),
           existing: {
-            id: { tool: 'claude-code' as const, type: 'mcp-server' as const, name: 'identical-comp', scope: 'user' as const },
+            id: {
+              tool: 'claude-code' as const,
+              type: 'mcp-server' as const,
+              name: 'identical-comp',
+              scope: 'user' as const,
+            },
             enabled: true,
             tracking: 'detected' as const,
             core: { transport: 'stdio' as const, command: 'test-cmd' },
@@ -76,8 +88,10 @@ describe('loadBundle — success', () => {
 
   it('auto-generates resolutions: skip for identical, install for others', async () => {
     const mockBundle = {
-      formatVersion: '1.0',
-      exportedFrom: { tools: [] as string[], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [],
     };
@@ -87,7 +101,12 @@ describe('loadBundle — success', () => {
         {
           incoming: makePortable({ name: 'content-conflict' }),
           existing: {
-            id: { tool: 'claude-code' as const, type: 'mcp-server' as const, name: 'content-conflict', scope: 'user' as const },
+            id: {
+              tool: 'claude-code' as const,
+              type: 'mcp-server' as const,
+              name: 'content-conflict',
+              scope: 'user' as const,
+            },
             enabled: true,
             tracking: 'detected' as const,
             core: { transport: 'stdio' as const, command: 'x' },
@@ -97,7 +116,12 @@ describe('loadBundle — success', () => {
         {
           incoming: makePortable({ name: 'identical-one' }),
           existing: {
-            id: { tool: 'claude-code' as const, type: 'mcp-server' as const, name: 'identical-one', scope: 'user' as const },
+            id: {
+              tool: 'claude-code' as const,
+              type: 'mcp-server' as const,
+              name: 'identical-one',
+              scope: 'user' as const,
+            },
             enabled: true,
             tracking: 'detected' as const,
             core: { transport: 'stdio' as const, command: 'test-cmd' },
@@ -143,8 +167,10 @@ describe('loadBundle — error path', () => {
 
   it('sets error when detectConflicts throws', async () => {
     vi.mocked(window.aiplughub.bundles.parseFile).mockResolvedValue({
-      formatVersion: '1.0',
-      exportedFrom: { tools: [], date: '' },
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '', appVersion: '1.9.0' },
+      recommendedSources: [],
       plugins: [],
       components: [],
     });
@@ -172,9 +198,7 @@ describe('buildAndSave — success path', () => {
     useWizardStore.setState({
       activeWizard: 'export',
       exportStep: 2,
-      selectedIds: [
-        { tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' },
-      ],
+      selectedIds: [{ tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' }],
       exportOptions: {},
     });
 
@@ -193,9 +217,7 @@ describe('buildAndSave — success path', () => {
     useWizardStore.setState({
       activeWizard: 'export',
       exportStep: 2,
-      selectedIds: [
-        { tool: 'claude-code', type: 'skill', name: 'my-skill', scope: 'user' },
-      ],
+      selectedIds: [{ tool: 'claude-code', type: 'skill', name: 'my-skill', scope: 'user' }],
       exportOptions: { name: 'custom-bundle-name' },
     });
 
@@ -216,9 +238,7 @@ describe('buildAndSave — save dialog cancelled', () => {
     useWizardStore.setState({
       activeWizard: 'export',
       exportStep: 2,
-      selectedIds: [
-        { tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' },
-      ],
+      selectedIds: [{ tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' }],
       exportOptions: {},
     });
 
@@ -240,9 +260,7 @@ describe('buildAndSave — error path', () => {
     useWizardStore.setState({
       activeWizard: 'export',
       exportStep: 2,
-      selectedIds: [
-        { tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' },
-      ],
+      selectedIds: [{ tool: 'claude-code', type: 'mcp-server', name: 'test', scope: 'user' }],
       exportOptions: {},
     });
 

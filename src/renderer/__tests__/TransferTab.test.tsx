@@ -170,8 +170,10 @@ describe('ImportWizard', () => {
       activeWizard: 'import',
       importStep: 1,
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },
@@ -194,8 +196,10 @@ describe('ImportWizard', () => {
       activeWizard: 'import',
       importStep: 1,
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },
@@ -249,9 +253,7 @@ describe('ImportWizard', () => {
       error: 'Invalid bundle format: missing required field "components"',
     });
     render(<ImportWizard />);
-    expect(
-      screen.getByText(/invalid bundle format/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/invalid bundle format/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
   });
@@ -261,8 +263,10 @@ describe('ImportWizard', () => {
       activeWizard: 'import',
       importStep: 2,
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },
@@ -287,9 +291,7 @@ describe('ImportWizard', () => {
       configValues: {},
     });
     render(<ImportWizard />);
-    expect(
-      screen.getByText(/some plugins need settings/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/some plugins need settings/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/value for API_KEY/i)).toBeInTheDocument();
   });
 
@@ -298,8 +300,10 @@ describe('ImportWizard', () => {
       activeWizard: 'import',
       importStep: 2,
       bundle: {
-        formatVersion: '1.0',
-        exportedFrom: { tools: ['claude-code'], date: '2026-01-01' },
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+        recommendedSources: [],
         plugins: [],
         components: [],
       },

@@ -9,6 +9,7 @@ import type { AdapterRegistry } from '../adapters/adapter-registry';
 import type { DataStore } from '../data-store';
 import type { SecretStore } from '../secret-store';
 import type { MarketplaceClient } from '../marketplace/marketplace-client';
+import { fetchSuggestedSources } from '../marketplace';
 import type { Logger } from '../logger';
 import type { BackupManager } from '../backup';
 import { assertWriteAllowed } from '../write-guard';
@@ -40,6 +41,9 @@ import type {
   BackupSummary,
   BackupCreateOptions,
   RestoreResult,
+  SuggestedSourcesManifest,
+  BundleTarget,
+  ToolId,
 } from '@shared/types';
 import { AppError } from '@shared/types';
 import { componentIdKey, normalizeSourceUrl } from '@shared/utils';
@@ -443,7 +447,38 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
           }
         }
 
-        const bundle = buildBundle(componentIds, allComponents, exportOptions);
+        // Fetch marketplace source URLs for bundle portability
+        let marketplaceSources: Map<string, { sourceId: string; url: string }> | undefined;
+        let userSources: MarketplaceSourceConfig[] | undefined;
+        try {
+          const sources = await deps.marketplace.getSources();
+          userSources = sources;
+          marketplaceSources = new Map(
+            sources.map((s) => [s.sourceId, { sourceId: s.sourceId, url: s.url }]),
+          );
+        } catch {
+          // Non-fatal — bundle works without source URLs, just less portable
+        }
+
+        // Determine target — from export options or infer from first selected component
+        const target: BundleTarget = exportOptions.target ?? {
+          scope: 'user',
+          toolId: (allComponents.find((c) =>
+            componentIds.some((id) => componentIdKey(c.id) === componentIdKey(id)),
+          )?.id.tool ?? 'claude-code') as ToolId,
+        };
+
+        const { version: appVersion } = require('../../../package.json');
+
+        const bundle = buildBundle(
+          componentIds,
+          allComponents,
+          exportOptions,
+          target,
+          appVersion,
+          marketplaceSources,
+          userSources,
+        );
         const json = serializeBundle(bundle);
         return ok(json);
       } catch (err) {
@@ -833,6 +868,20 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
       return fail(err);
     }
   });
+
+  // --- browse:getSuggestedSources ---
+  ipcMain.handle(
+    'browse:getSuggestedSources',
+    async (): Promise<IpcResult<SuggestedSourcesManifest>> => {
+      try {
+        const manifest = await fetchSuggestedSources(logger);
+        return ok(manifest);
+      } catch (err) {
+        logger.error(MODULE, 'browse:getSuggestedSources failed', err as Error);
+        return fail(err);
+      }
+    },
+  );
 
   // --- settings:getSources ---
   ipcMain.handle('settings:getSources', async (): Promise<IpcResult<MarketplaceSourceConfig[]>> => {

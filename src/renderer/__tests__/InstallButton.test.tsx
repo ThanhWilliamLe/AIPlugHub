@@ -58,13 +58,7 @@ beforeEach(() => {
 describe('InstallButton', () => {
   describe('already installed state', () => {
     it('shows disabled "Installed" button when isInstalled is true', () => {
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={true}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={true} />);
       const btn = screen.getByRole('button', { name: /installed/i });
       expect(btn).toBeInTheDocument();
       expect(btn).toBeDisabled();
@@ -86,13 +80,7 @@ describe('InstallButton', () => {
   describe('installing state', () => {
     it('shows "Installing..." when this ref is being installed', () => {
       useBrowseStore.setState({ installingRef: REF });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       expect(screen.getByText('Installing...')).toBeInTheDocument();
       expect(screen.getByRole('button')).toBeDisabled();
     });
@@ -100,13 +88,7 @@ describe('InstallButton', () => {
     it('shows normal install button when a different ref is being installed', () => {
       useBrowseStore.setState({ installingRef: OTHER_REF });
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       expect(screen.getByRole('button', { name: /install/i })).toBeInTheDocument();
     });
   });
@@ -114,13 +96,7 @@ describe('InstallButton', () => {
   describe('just installed state', () => {
     it('shows "View in My Setup" link after successful install', () => {
       useBrowseStore.setState({ lastInstalledRef: REF, installError: null });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       expect(screen.getByText(/View in My Setup/)).toBeInTheDocument();
     });
   });
@@ -131,87 +107,27 @@ describe('InstallButton', () => {
         lastInstalledRef: REF,
         installError: 'Install failed',
       });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       expect(screen.getByText('Failed — Retry')).toBeInTheDocument();
     });
   });
 
   describe('install location selector', () => {
-    it('shows Install button with location sub-text when compatible tools exist', async () => {
+    it('shows simple Install button when single compatible tool (no dropdown)', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      // Wait for preferences to load and sub-text to appear
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       await waitFor(() => {
         expect(screen.getByText('Install')).toBeInTheDocument();
-        expect(screen.getByText(/Claude Code/)).toBeInTheDocument();
       });
-    });
-
-    it('opens location dropdown via caret button', async () => {
-      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      await waitFor(() => {
-        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
-      });
-      fireEvent.click(screen.getByLabelText('Change install location'));
-      expect(screen.getByText('Install location')).toBeInTheDocument();
-      expect(screen.getByText('user')).toBeInTheDocument();
-    });
-
-    it('selects target without installing when dropdown item is clicked', async () => {
-      useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
-      const installFn = vi.fn();
-      useBrowseStore.setState({ install: installFn });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
-      await waitFor(() => {
-        expect(screen.getByLabelText('Change install location')).toBeInTheDocument();
-      });
-      fireEvent.click(screen.getByLabelText('Change install location'));
-      fireEvent.click(screen.getByText('Claude Code'));
-      // Selecting target should NOT trigger install
-      expect(installFn).not.toHaveBeenCalled();
-      // Should persist the selection
-      const expectedTarget: BrowseInstallTarget = { instanceId: 'cc-1', scope: 'user' };
-      expect(window.aiplughub.preferences.set).toHaveBeenCalledWith({
-        browseInstallTarget: expectedTarget,
-      });
+      // No dropdown caret when single tool
+      expect(screen.queryByLabelText('Change install location')).not.toBeInTheDocument();
     });
 
     it('installs using selected target when Install button is clicked', async () => {
       useToolStore.setState({ tools: [CLAUDE_CODE_TOOL] });
       const installFn = vi.fn();
       useBrowseStore.setState({ install: installFn });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       await waitFor(() => {
         expect(screen.getByText('Install')).toBeInTheDocument();
       });
@@ -279,13 +195,7 @@ describe('InstallButton', () => {
   describe('no compatible tools', () => {
     it('shows disabled "No compatible tools" button when no detected tools match', () => {
       useToolStore.setState({ tools: [] });
-      render(
-        <InstallButton
-          ref_={REF}
-          compatibleTools={['claude-code']}
-          isInstalled={false}
-        />,
-      );
+      render(<InstallButton ref_={REF} compatibleTools={['claude-code']} isInstalled={false} />);
       const btn = screen.getByText('No compatible tools');
       expect(btn).toBeInTheDocument();
       expect(btn.closest('button')).toBeDisabled();

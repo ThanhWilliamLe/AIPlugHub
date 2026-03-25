@@ -3,11 +3,17 @@
  * Validates bundle structure on deserialization.
  */
 
-import type { Bundle, PortableComponent, PortablePlugin, ComponentType } from '@shared/types';
+import type {
+  Bundle,
+  BundleTarget,
+  PortableComponent,
+  PortablePlugin,
+  ComponentType,
+} from '@shared/types';
 import { AppError } from '@shared/types';
 import { ALL_COMPONENT_TYPES } from '@shared/constants';
 
-const FORMAT_VERSION = '1.0';
+const FORMAT_VERSION = '2.0';
 
 /** Serialize a bundle to JSON string */
 export function serializeBundle(bundle: Bundle): string {
@@ -34,8 +40,15 @@ export function deserializeBundle(json: string): Bundle {
     throw new AppError('BUNDLE_INVALID', 'Missing required field: formatVersion', false);
   }
 
-  // Version compatibility
+  // Version compatibility — v2.0 clean break
   const [major] = obj.formatVersion.split('.');
+  if (major === '1') {
+    throw new AppError(
+      'BUNDLE_VERSION',
+      `This bundle uses format v${obj.formatVersion}, which is no longer supported. Re-export it using AI Plug Hub v1.9 or later to create a compatible bundle.`,
+      false,
+    );
+  }
   const [supportedMajor] = FORMAT_VERSION.split('.');
   if (major !== supportedMajor) {
     throw new AppError(
@@ -45,17 +58,19 @@ export function deserializeBundle(json: string): Bundle {
     );
   }
 
+  // Validate target (scoped bundle)
+  if (!obj.target || typeof obj.target !== 'object') {
+    throw new AppError('BUNDLE_INVALID', 'Missing required field: target', false);
+  }
+  validateBundleTarget(obj.target as Record<string, unknown>);
+
   if (!obj.exportedFrom || typeof obj.exportedFrom !== 'object') {
     throw new AppError('BUNDLE_INVALID', 'Missing required field: exportedFrom', false);
   }
 
   const exportedFrom = obj.exportedFrom as Record<string, unknown>;
-  if (!Array.isArray(exportedFrom.tools) || typeof exportedFrom.date !== 'string') {
-    throw new AppError(
-      'BUNDLE_INVALID',
-      'exportedFrom must have tools array and date string',
-      false,
-    );
+  if (typeof exportedFrom.date !== 'string') {
+    throw new AppError('BUNDLE_INVALID', 'exportedFrom must have a date string', false);
   }
 
   // Validate components and plugins arrays
@@ -132,16 +147,53 @@ export function validatePortableComponent(c: Record<string, unknown>): void {
   }
 }
 
+/** Validate bundle target shape */
+function validateBundleTarget(t: Record<string, unknown>): void {
+  if (t.scope === 'user') {
+    if (typeof t.toolId !== 'string') {
+      throw new AppError('BUNDLE_INVALID', 'User-scope target must have a toolId string', false);
+    }
+  } else if (t.scope === 'project') {
+    if (typeof t.projectName !== 'string') {
+      throw new AppError(
+        'BUNDLE_INVALID',
+        'Project-scope target must have a projectName string',
+        false,
+      );
+    }
+    if (!Array.isArray(t.tools) || !t.tools.every((tool: unknown) => typeof tool === 'string')) {
+      throw new AppError(
+        'BUNDLE_INVALID',
+        'Project-scope target must have a tools array of strings',
+        false,
+      );
+    }
+  } else {
+    throw new AppError(
+      'BUNDLE_INVALID',
+      `Invalid target scope: ${String(t.scope)}. Must be "user" or "project".`,
+      false,
+    );
+  }
+}
+
 /** Create a new empty bundle with metadata */
-export function createBundle(name: string, tools: string[], description?: string): Bundle {
+export function createBundle(
+  name: string,
+  target: BundleTarget,
+  appVersion: string,
+  description?: string,
+): Bundle {
   return {
     formatVersion: FORMAT_VERSION,
     name,
     description,
+    target,
     exportedFrom: {
-      tools: tools as Bundle['exportedFrom']['tools'],
       date: new Date().toISOString(),
+      appVersion,
     },
+    recommendedSources: [],
     plugins: [],
     components: [],
   };

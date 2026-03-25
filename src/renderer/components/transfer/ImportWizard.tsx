@@ -10,7 +10,13 @@ import { useToastStore } from '@renderer/stores/toast-store';
 import { TOOL_META, COMPONENT_TYPE_META } from '@shared/constants';
 import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { Button } from '@renderer/components/ui/button';
-import type { ImportProgressEvent, PortablePlugin } from '@shared/types';
+import type {
+  ImportProgressEvent,
+  PortablePlugin,
+  ProjectFolder,
+  MarketplaceSourceConfig,
+  RecommendedSource,
+} from '@shared/types';
 import type { ConflictEntry, ConflictResolution } from '@shared/types';
 
 type ImportFilter = 'new' | 'conflicts' | 'identical' | 'incompatible' | 'plugins';
@@ -75,6 +81,9 @@ export function ImportWizard() {
     return unsubscribe;
   }, []);
 
+  const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
+  const [userSources, setUserSources] = useState<MarketplaceSourceConfig[]>([]);
+
   const {
     importStep,
     bundle,
@@ -88,14 +97,31 @@ export function ImportWizard() {
     pendingConfigs,
     configValues,
     showingConfigPrompts,
+    importProjectPath,
+    acceptedSourceIds,
     setResolution,
     setAlwaysOverride,
+    setImportProjectPath,
+    setAcceptedSourceIds,
     executeImport,
     setConfigValue,
     confirmConfigs,
     closeWizard,
   } = useWizardStore();
+  const tools = useToolStore((s) => s.tools);
   const setActiveTab = useUiStore((s) => s.setActiveTab);
+
+  // Load project folders and user sources for scoped import
+  useEffect(() => {
+    window.aiplughub.projects
+      .list()
+      .then(setProjectFolders)
+      .catch(() => {});
+    window.aiplughub.settings
+      .getSources()
+      .then(setUserSources)
+      .catch(() => {});
+  }, []);
 
   // Check if all required configs have values
   const allConfigsFilled = useMemo(() => {
@@ -145,6 +171,37 @@ export function ImportWizard() {
       importTypes,
     };
   }, [bundle, conflicts, realConflicts, identicalConflicts]);
+
+  // User-scope: check if the target tool is detected
+  const userScopeToolBlocked = useMemo(() => {
+    if (!bundle || bundle.target.scope !== 'user') return false;
+    const toolId = bundle.target.toolId;
+    return !tools.some((t) => t.toolId === toolId && t.detected);
+  }, [bundle, tools]);
+
+  // Project-scope: check which tools from target.tools are missing
+  const missingProjectTools = useMemo(() => {
+    if (!bundle || bundle.target.scope !== 'project') return [];
+    const detectedToolIds = new Set(tools.filter((t) => t.detected).map((t) => t.toolId));
+    return bundle.target.tools.filter((t) => !detectedToolIds.has(t));
+  }, [bundle, tools]);
+
+  // Pre-match project folder by name
+  useEffect(() => {
+    if (!bundle || bundle.target.scope !== 'project' || importProjectPath) return;
+    const targetName = bundle.target.projectName;
+    const match = projectFolders.find((f) => f.name === targetName);
+    if (match) {
+      setImportProjectPath(match.path);
+    }
+  }, [bundle, projectFolders, importProjectPath, setImportProjectPath]);
+
+  // Recommended sources that the user doesn't already have
+  const missingSources = useMemo((): RecommendedSource[] => {
+    if (!bundle?.recommendedSources?.length) return [];
+    const userSourceUrls = new Set(userSources.map((s) => s.url));
+    return bundle.recommendedSources.filter((rs) => !userSourceUrls.has(rs.url));
+  }, [bundle, userSources]);
 
   // Count items that will be installed (new + non-skipped conflicts + plugin groups)
   const installCount = useMemo(() => {
@@ -242,14 +299,13 @@ export function ImportWizard() {
       {/* Header */}
       <div className="px-6 py-4 border-b border-sand-border">
         <h2 className="text-lg font-semibold text-sand-text">Import Bundle</h2>
-        <p className="text-xs text-sand-muted">Install plugins from a shared file</p>
+        <p className="text-xs text-sand-muted">
+          {bundle.target.scope === 'user'
+            ? `${TOOL_META[bundle.target.toolId]?.label ?? bundle.target.toolId} setup${bundle.exportedFrom.machine ? ` from ${bundle.exportedFrom.machine}` : ''}${bundle.exportedFrom.date ? ` (${new Date(bundle.exportedFrom.date).toLocaleDateString()})` : ''}`
+            : `Project "${bundle.target.projectName}"${bundle.exportedFrom.machine ? ` from ${bundle.exportedFrom.machine}` : ''}${bundle.exportedFrom.date ? ` (${new Date(bundle.exportedFrom.date).toLocaleDateString()})` : ''}`}
+        </p>
         {bundle.name && <p className="text-sm text-sand-secondary mt-1">{bundle.name}</p>}
         {bundle.description && <p className="text-xs text-sand-muted mt-1">{bundle.description}</p>}
-        <p className="text-xs text-sand-muted mt-1">
-          Exported from {bundle.exportedFrom.tools.map((t) => TOOL_META[t]?.label ?? t).join(', ')}
-          {bundle.exportedFrom.date &&
-            ` on ${new Date(bundle.exportedFrom.date).toLocaleDateString()}`}
-        </p>
         {/* USR-17: Bundle summary */}
         {bundleSummary && (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sand-secondary">
@@ -312,6 +368,86 @@ export function ImportWizard() {
         {/* Step 1: Preview & Resolve */}
         {importStep === 1 && (
           <div className="space-y-4">
+            {/* User-scope: block if target tool not detected */}
+            {bundle.target.scope === 'user' && userScopeToolBlocked && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                This bundle requires{' '}
+                <strong>{TOOL_META[bundle.target.toolId]?.label ?? bundle.target.toolId}</strong>.
+                Install it first, then try again.
+              </div>
+            )}
+
+            {/* Project-scope: folder picker */}
+            {bundle.target.scope === 'project' && (
+              <div className="p-3 rounded-lg bg-sand-surface/40 border border-sand-border">
+                <label className="block text-sm font-medium text-sand-text mb-1.5">
+                  Choose a project folder for this bundle:
+                </label>
+                <select
+                  value={importProjectPath ?? ''}
+                  onChange={(e) => setImportProjectPath(e.target.value)}
+                  className="w-full text-sm px-3 py-2 rounded-lg border border-sand-border bg-sand-paper focus:outline-none focus:ring-2 focus:ring-accent-olive/40"
+                  aria-label="Project folder"
+                >
+                  <option value="">Select a project folder...</option>
+                  {projectFolders.map((f) => (
+                    <option key={f.path} value={f.path}>
+                      {f.name} ({f.path})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Project-scope: missing tool warning */}
+            {bundle.target.scope === 'project' && missingProjectTools.length > 0 && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                This bundle includes{' '}
+                {missingProjectTools.map((t) => TOOL_META[t]?.label ?? t).join(', ')} plugins but{' '}
+                {missingProjectTools.length === 1
+                  ? `${TOOL_META[missingProjectTools[0]]?.label ?? missingProjectTools[0]} is`
+                  : 'they are'}{' '}
+                not detected. Those plugins will be skipped.
+              </div>
+            )}
+
+            {/* Recommended sources the user doesn't have */}
+            {missingSources.length > 0 && (
+              <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-200">
+                <p className="text-sm text-blue-800 mb-2">
+                  These plugins came from sources you don't have. Add them to receive updates?
+                </p>
+                <div className="space-y-1.5">
+                  {missingSources.map((src) => {
+                    const checked = acceptedSourceIds.includes(src.sourceId);
+                    return (
+                      <label
+                        key={src.sourceId}
+                        className="flex items-center gap-2 text-sm text-blue-700 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            if (checked) {
+                              setAcceptedSourceIds(
+                                acceptedSourceIds.filter((id) => id !== src.sourceId),
+                              );
+                            } else {
+                              setAcceptedSourceIds([...acceptedSourceIds, src.sourceId]);
+                            }
+                          }}
+                          className="rounded border-blue-300 accent-accent-olive"
+                        />
+                        <span className="font-medium">{src.displayName}</span>
+                        <span className="text-xs text-blue-500 truncate">{src.url}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Filter pills — quick toggle by action type */}
             <div className="flex flex-wrap gap-1.5">
               {conflicts.newComponents.length > 0 && (
@@ -759,7 +895,7 @@ export function ImportWizard() {
             <Button
               className="bg-accent-olive text-white hover:bg-accent-olive/90"
               size="sm"
-              disabled={loading || installCount === 0}
+              disabled={loading || installCount === 0 || userScopeToolBlocked}
               onClick={executeImport}
             >
               {installCount > 0 ? `Install (${installCount})` : 'Nothing to install'}

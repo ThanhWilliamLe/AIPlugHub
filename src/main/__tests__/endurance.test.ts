@@ -21,7 +21,13 @@ import { tmpdir } from 'os';
 
 import { createDataStore } from '../data-store';
 import { withAdapterLock, _resetLocks } from '../ipc/operation-lock';
-import { buildBundle } from '../bundle/export-builder';
+import { buildBundle as buildBundleRaw } from '../bundle/export-builder';
+import type { BundleTarget } from '@shared/types';
+
+const _enduranceTarget: BundleTarget = { scope: 'user', toolId: 'claude-code' };
+function buildBundle(ids: any[], comps: any[], opts: any) {
+  return buildBundleRaw(ids, comps, opts, _enduranceTarget, '1.9.0');
+}
 import { serializeBundle, deserializeBundle, createBundle } from '../bundle/serializer';
 import { detectConflicts } from '../bundle/conflict-detector';
 import { createAdapterRegistry } from '../adapters/adapter-registry';
@@ -466,7 +472,12 @@ describe('Endurance: Bundle engine repeated cycles', () => {
   it('round-trip fidelity maintained across 200 cycles — deserialized components match originals', async () => {
     const CYCLES = 200;
     const portables = makePortableComponents(50);
-    const bundleTemplate = createBundle('fidelity-test', ['claude-code'], 'endurance');
+    const bundleTemplate = createBundle(
+      'fidelity-test',
+      { scope: 'user', toolId: 'claude-code' },
+      '1.9.0',
+      'endurance',
+    );
     bundleTemplate.components = portables;
 
     for (let i = 0; i < CYCLES; i++) {

@@ -3,7 +3,7 @@
  * Source: 5A-specs/browse-tab-spec.md §4
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useBrowseStore } from '@renderer/stores/browse-store';
 
 export function BrowseSearchBar() {
@@ -36,6 +36,27 @@ export function BrowseSearchBar() {
     [setSearchQuery],
   );
 
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        if (localValue) {
+          setLocalValue('');
+          setSearchQuery('');
+        } else {
+          inputRef.current?.blur();
+        }
+      }
+      // ArrowDown from search → focus first result in the list
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const firstItem = document.querySelector<HTMLElement>('[data-focus-index="0"]');
+        firstItem?.focus();
+      }
+    },
+    [localValue, setSearchQuery],
+  );
+
   return (
     <search className="relative flex-1">
       <span
@@ -47,9 +68,10 @@ export function BrowseSearchBar() {
       <input
         ref={inputRef}
         type="search"
-        placeholder="Search plugins...  (Ctrl+K)"
+        placeholder="Search plugins...  (Ctrl+K / Ctrl+F)"
         value={localValue}
         onChange={handleChange}
+        onKeyDown={handleKeyDown}
         className="w-full pl-9 pr-3 py-2 rounded-lg bg-sand-surface/50 border border-sand-border
                    text-sm text-sand-text placeholder:text-sand-muted
                    focus:outline-none focus:ring-2 focus:ring-accent-olive/40 focus:bg-sand-surface

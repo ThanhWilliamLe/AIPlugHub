@@ -6,6 +6,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useToastStore } from '@renderer/stores/toast-store';
 import { useToolStore } from '@renderer/stores/tool-store';
+import { useListKeyboardNav } from '@renderer/hooks/useListKeyboardNav';
 import type { PluginGroup, ProjectGroup } from './ToolSection';
 import { useUiStore } from '@renderer/stores/ui-store';
 import { useComponents } from '@renderer/hooks/useComponents';
@@ -281,6 +282,21 @@ export function MySetupTab() {
     [components, uninstallComponent, uninstallPlugin, exitSelectionMode, addToast],
   );
 
+  // Keyboard navigation for the component list (arrow keys, Space to toggle select)
+  const listNav = useListKeyboardNav({
+    onSpace: (el) => {
+      // Simulate click — ComponentCard click handler already handles selection mode vs detail
+      el.click();
+    },
+    onEscape: () => {
+      if (selectionMode) {
+        exitSelectionMode();
+      } else if (selectedComponentId) {
+        selectComponent(null);
+      }
+    },
+  });
+
   // Empty state: no tools detected
   if (!hasTools && !scanning) {
     return (
@@ -313,11 +329,7 @@ export function MySetupTab() {
             >
               Browse plugins
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveTab('transfer')}
-            >
+            <Button variant="outline" size="sm" onClick={() => setActiveTab('transfer')}>
               Import a bundle
             </Button>
           </div>
@@ -395,8 +407,12 @@ export function MySetupTab() {
         )}
       </div>
 
-      {/* Component list */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 relative">
+      {/* Component list — with keyboard navigation */}
+      <div
+        ref={listNav.containerRef}
+        onKeyDown={listNav.handleKeyDown}
+        className="flex-1 overflow-y-auto px-2 py-3 relative"
+      >
         {scanning && (
           <div className="text-center py-8 text-sm text-sand-secondary">Scanning your tools...</div>
         )}

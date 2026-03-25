@@ -12,8 +12,10 @@ import { useToolStore } from '../stores/tool-store';
 import { useUiStore } from '../stores/ui-store';
 
 const BASE_BUNDLE = {
-  formatVersion: '1.0',
-  exportedFrom: { tools: ['claude-code'] as string[], date: '2026-01-15T10:00:00Z' },
+  formatVersion: '2.0',
+  target: { scope: 'user', toolId: 'claude-code' },
+  exportedFrom: { date: '2026-01-15T10:00:00Z', appVersion: '1.9.0' },
+  recommendedSources: [],
   plugins: [],
   components: [],
 };
@@ -77,30 +79,29 @@ describe('ImportWizard — bundle header info', () => {
       bundle: {
         ...BASE_BUNDLE,
         exportedFrom: {
-          tools: ['claude-code'],
           date: '2026-01-15T10:00:00Z',
+          appVersion: '1.9.0',
         },
       },
       conflicts: EMPTY_CONFLICTS,
     });
     render(<ImportWizard />);
-    // Date should be rendered via toLocaleDateString
-    expect(screen.getByText(/exported from/i)).toBeInTheDocument();
+    // Date should be rendered via toLocaleDateString — header now shows tool name + date
+    expect(screen.getByText(/Claude Code/i)).toBeInTheDocument();
   });
 
-  it('renders tool labels in header from tools array', () => {
+  it('renders tool label in header from target', () => {
     useWizardStore.setState({
       activeWizard: 'import',
       importStep: 1,
       bundle: {
         ...BASE_BUNDLE,
-        exportedFrom: { tools: ['claude-code', 'claude-desktop'], date: '' },
+        target: { scope: 'user', toolId: 'claude-code' },
       },
       conflicts: EMPTY_CONFLICTS,
     });
     render(<ImportWizard />);
     expect(screen.getByText(/Claude Code/)).toBeInTheDocument();
-    expect(screen.getByText(/Claude Desktop/)).toBeInTheDocument();
   });
 });
 
@@ -349,7 +350,11 @@ describe('ImportWizard — import results', () => {
         installed: [],
         skipped: [
           {
-            component: { type: 'mcp-server', name: 'skipped-srv', core: { transport: 'stdio' as const, command: 'x' } },
+            component: {
+              type: 'mcp-server',
+              name: 'skipped-srv',
+              core: { transport: 'stdio' as const, command: 'x' },
+            },
             reason: 'Identical',
           },
         ],
@@ -374,7 +379,11 @@ describe('ImportWizard — import results', () => {
         skipped: [],
         failed: [
           {
-            component: { type: 'mcp-server', name: 'fail-srv', core: { transport: 'stdio' as const, command: 'x' } },
+            component: {
+              type: 'mcp-server',
+              name: 'fail-srv',
+              core: { transport: 'stdio' as const, command: 'x' },
+            },
             error: { code: 'INSTALL_FAILED', message: 'Permission denied', userFacing: true },
           },
         ],
@@ -428,7 +437,11 @@ describe('ImportWizard — incompatible components section', () => {
         conflicts: [],
         incompatible: [
           {
-            component: { type: 'mcp-server', name: 'incompat-srv', core: { transport: 'stdio' as const, command: 'x' } },
+            component: {
+              type: 'mcp-server',
+              name: 'incompat-srv',
+              core: { transport: 'stdio' as const, command: 'x' },
+            },
             reason: 'Tool not installed',
           },
         ],
@@ -470,9 +483,7 @@ describe('ImportWizard — always override checkbox', () => {
         ],
         incompatible: [],
       },
-      resolutions: [
-        { componentKey: { type: 'mcp-server', name: 'conflict-srv' }, action: 'skip' },
-      ],
+      resolutions: [{ componentKey: { type: 'mcp-server', name: 'conflict-srv' }, action: 'skip' }],
       alwaysOverride: false,
     });
     render(<ImportWizard />);
