@@ -33,6 +33,16 @@ export function detectConflicts(
   const incompatible: { component: PortableComponent; reason: string }[] = [];
 
   for (const inc of incoming) {
+    // Skip unknown-type components (e.g., MCP-only plugin placeholders) —
+    // these can't be installed standalone; the parent plugin handles them.
+    if (inc.type === 'unknown') {
+      incompatible.push({
+        component: inc,
+        reason: 'Plugin placeholder — installed automatically with the plugin',
+      });
+      continue;
+    }
+
     // Check tool compatibility — two-level check:
     // 1. If sourceTools specified, at least one must be detected
     // 2. Otherwise, at least one detected tool must support this component type

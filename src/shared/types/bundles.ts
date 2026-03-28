@@ -14,14 +14,6 @@ export type PluginOrigin =
   | { type: 'local'; path: string }
   | { type: 'bundle'; bundleId: string };
 
-export type Plugin = {
-  name: string;
-  origin: PluginOrigin;
-  version?: string;
-  author?: { name: string; email?: string; url?: string };
-  components: ComponentId[];
-};
-
 // ─── Portable Representation ─────────────────────────────────────────
 
 export type ConfigRequirement = {

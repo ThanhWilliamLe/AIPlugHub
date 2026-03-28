@@ -409,20 +409,15 @@ describe('ClaudeDesktopAdapter.install', () => {
     }
   });
 
-  it('rejects names with forward slash', async () => {
+  it('accepts namespaced names with forward slash', async () => {
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'foo/bar',
       core: { transport: 'stdio', command: 'echo' },
     };
 
-    try {
-      await adapter.install(portable, DEFAULT_TARGET);
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+    const result = await adapter.install(portable, DEFAULT_TARGET);
+    expect(result.id.name).toBe('foo/bar');
   });
 
   it('rejects names with backslash', async () => {
@@ -582,7 +577,9 @@ describe('ClaudeDesktopAdapter.uninstall — name validation', () => {
     }
   });
 
-  it('rejects names with forward slash', async () => {
+  it('accepts namespaced names with forward slash (no CONFIG_PERMISSION)', async () => {
+    // Slash-separated names should pass validateName; the error should be
+    // COMPONENT_NOT_FOUND (server doesn't exist), NOT CONFIG_PERMISSION.
     try {
       await adapter.uninstall({
         tool: 'claude-desktop',
@@ -593,7 +590,7 @@ describe('ClaudeDesktopAdapter.uninstall — name validation', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
+      expect((err as AppError).code).not.toBe('CONFIG_PERMISSION');
     }
   });
 

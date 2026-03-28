@@ -1,5 +1,5 @@
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-1%2C907-blue)
+![Tests](https://img.shields.io/badge/tests-1%2C900-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-public%20preview-orange)
@@ -66,7 +66,7 @@ Requires Node.js 18+ and Rust (Tauri).
 npm run dev          # Launch with hot reload
 npm run build        # Production build
 npm run dist         # Build + package Windows installer
-npm test             # Run tests (1,907 passing)
+npm test             # Run tests (1,900 passing)
 npm run lint         # ESLint
 npm run typecheck    # TypeScript strict check
 npm run test:e2e     # Playwright E2E tests
@@ -79,12 +79,12 @@ npm run test:e2e     # Playwright E2E tests
 - **Tailwind v4 + Radix UI** — styling and accessible primitives
 - **Zustand** — state management
 - **Fuse.js** — client-side fuzzy search
-- **Vitest + React Testing Library** — 1,907 unit/integration tests
+- **Vitest + React Testing Library** — 1,900 unit/integration tests
 - **Playwright** — E2E tests
 
 ## Preview release
 
-AI Plug Hub is in **public preview**. Core features are implemented and backed by 1,907 tests (including endurance suites), but it hasn't had wide real-world usage yet. Windows is available now; macOS and Linux are coming soon.
+AI Plug Hub is in **public preview**. Core features are implemented and backed by 1,900 tests (including endurance suites), but it hasn't had wide real-world usage yet. Windows is available now; macOS and Linux are coming soon.
 
 This is real software you can download and run today — not a prototype, not a waitlist. Your feedback will shape what comes next.
 

@@ -215,6 +215,25 @@ describe('ConfigIO.writeJSON', () => {
     expect(backup).toEqual({ v: 2 });
   });
 
+  it('skips write and cleans up backup when content is identical (no-op optimization)', async () => {
+    const io = createConfigIO(logger);
+    const file = join(tempDir, 'noop.json');
+    const data = { key: 'stable', nested: { a: 1 } };
+
+    // First write — creates the file
+    await io.writeJSON(file, data);
+
+    // Second write with identical content — should be a no-op
+    await io.writeJSON(file, data);
+
+    // Backup should NOT exist (cleaned up because content was identical)
+    await expect(readFile(file + '.backup', 'utf-8')).rejects.toThrow();
+
+    // Main file content should still be correct
+    const content = JSON.parse(await readFile(file, 'utf-8'));
+    expect(content).toEqual(data);
+  });
+
   it('creates nested directories when parent does not exist (mkdir -p)', async () => {
     const io = createConfigIO(logger);
     const file = join(tempDir, 'deep', 'nested', 'dir', 'config.json');

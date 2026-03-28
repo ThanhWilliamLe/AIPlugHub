@@ -147,6 +147,42 @@ describe('loadBundle — success', () => {
 });
 
 // ---------------------------------------------------------------------------
+// loadBundle — recommended sources default accepted
+// ---------------------------------------------------------------------------
+
+describe('loadBundle — recommended sources default checked', () => {
+  it('sets acceptedSourceIds from bundle recommendedSources', async () => {
+    const mockBundle = {
+      formatVersion: '2.0',
+      target: { scope: 'user', toolId: 'claude-code' },
+      exportedFrom: { date: '2026-01-01', appVersion: '1.9.0' },
+      recommendedSources: [
+        {
+          sourceId: 'test-src',
+          url: 'https://example.com',
+          displayName: 'Test',
+          sourceType: 'git-marketplace',
+        },
+      ],
+      plugins: [],
+      components: [],
+    };
+
+    vi.mocked(window.aiplughub.bundles.parseFile).mockResolvedValue(mockBundle);
+    vi.mocked(window.aiplughub.bundles.detectConflicts).mockResolvedValue({
+      newComponents: [],
+      conflicts: [],
+      incompatible: [],
+    });
+
+    useWizardStore.getState().startImport();
+    await useWizardStore.getState().loadBundle('test.aibundle');
+
+    expect(useWizardStore.getState().acceptedSourceIds).toEqual(['test-src']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // loadBundle — error path
 // ---------------------------------------------------------------------------
 

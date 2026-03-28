@@ -237,6 +237,22 @@ describe('detectConflicts', () => {
     expect(result.incompatible).toHaveLength(1);
   });
 
+  it('filters unknown-type components into incompatible with placeholder reason', () => {
+    const incoming = [
+      makePortable({
+        type: 'unknown' as PortableComponent['type'],
+        name: 'plugin-placeholder',
+        sourceTools: ['claude-code'],
+        core: {},
+      }),
+    ];
+    const result = detectConflicts(incoming, [], DETECTED_TOOLS);
+    expect(result.newComponents).toHaveLength(0);
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.incompatible).toHaveLength(1);
+    expect(result.incompatible[0].reason).toContain('Plugin placeholder');
+  });
+
   // ── BUG-03: export-then-import sensitive env stripping ────────────
 
   it('classifies as identical when existing has sensitive env vars stripped during export', () => {

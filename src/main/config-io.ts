@@ -117,12 +117,25 @@ export function createConfigIO(logger: Logger): ConfigIO {
     assertWriteAllowed(targetPath);
     const backupPath = targetPath + '.backup';
     let previousHash: string | undefined;
+    const newHash = contentHash(content);
 
     try {
       // Copy first, then read the backup to compute hash
       await copyFile(targetPath, backupPath);
       const backedUpContent = await readFile(backupPath, 'utf-8');
       previousHash = contentHash(backedUpContent);
+
+      // Skip write entirely if content is identical (no-op optimization)
+      if (previousHash === newHash) {
+        // Remove the unnecessary backup copy
+        try {
+          await unlink(backupPath);
+        } catch {
+          // Best-effort cleanup
+        }
+        return;
+      }
+
       logger.info(MODULE, `Backup created: ${backupPath}`);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -151,7 +164,7 @@ export function createConfigIO(logger: Logger): ConfigIO {
       await rename(tempPath, targetPath);
       logger.info(MODULE, `Written: ${targetPath}`, {
         previousHash,
-        newHash: contentHash(content),
+        newHash,
       });
     } catch (err) {
       // Clean up temp file on failure

@@ -60,7 +60,7 @@ export function createClaudeDesktopAdapter(
 
   /** Validate component name does not contain path traversal characters. */
   function validateName(name: string): void {
-    if (name.includes('..') || name.includes('/') || name.includes('\\') || name.includes('\0')) {
+    if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
       throw new AppError(
         'CONFIG_PERMISSION',
         `Component name contains invalid characters: "${name}"`,

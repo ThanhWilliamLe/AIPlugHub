@@ -14,6 +14,8 @@ export type ToolDetectionResult = {
   detected: boolean;
   version?: string;
   componentCount?: number;
+  /** Whether the tool's CLI binary is available on PATH (for CLI-delegating adapters) */
+  cliAvailable?: boolean;
 };
 
 /** A registered tool instance (supports multiple instances of the same tool at different paths) */

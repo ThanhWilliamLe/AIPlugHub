@@ -74,7 +74,7 @@ export function createAntigravityAdapter(
   // -- Helpers --
 
   function validateName(name: string): void {
-    if (name.includes('..') || name.includes('/') || name.includes('\\') || name.includes('\0')) {
+    if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
       throw new AppError(
         'CONFIG_PERMISSION',
         `Component name contains invalid characters: "${name}"`,

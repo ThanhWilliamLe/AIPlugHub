@@ -61,26 +61,6 @@ describe('DataStore load guard', () => {
     await expect(store.removeComponentMeta(testId)).rejects.toThrow(AppError);
   });
 
-  it('calling getPlugins() before load() throws NOT_LOADED', async () => {
-    const store = makeStore();
-    await expect(store.getPlugins()).rejects.toThrow(AppError);
-  });
-
-  it('calling setPlugin() before load() throws NOT_LOADED', async () => {
-    const store = makeStore();
-    const plugin = {
-      name: 'test',
-      origin: { type: 'git' as const, url: 'https://example.com' },
-      components: [],
-    };
-    await expect(store.setPlugin(plugin)).rejects.toThrow(AppError);
-  });
-
-  it('calling removePlugin() before load() throws NOT_LOADED', async () => {
-    const store = makeStore();
-    await expect(store.removePlugin('test')).rejects.toThrow(AppError);
-  });
-
   it('calling getPreferences() before load() throws NOT_LOADED', async () => {
     const store = makeStore();
     await expect(store.getPreferences()).rejects.toThrow(AppError);
@@ -135,7 +115,6 @@ describe('DataStore.load', () => {
     const raw = JSON.parse(await readFile(dataPath, 'utf-8'));
     expect(raw.schemaVersion).toBe(1);
     expect(raw.components).toEqual([]);
-    expect(raw.plugins).toEqual([]);
     expect(raw.preferences.rescanOnLaunch).toBe(true);
     expect(raw.preferences.setupComplete).toBe(false);
     expect(raw.toolInstances).toEqual([]);
@@ -147,7 +126,6 @@ describe('DataStore.load', () => {
       JSON.stringify({
         schemaVersion: 1,
         components: [{ id: testId, tracking: 'detected' }],
-        plugins: [],
         preferences: { rescanOnLaunch: false, setupComplete: false },
         toolInstances: [],
       }),
@@ -183,7 +161,6 @@ describe('DataStore.load', () => {
       JSON.stringify({
         schemaVersion: 999,
         components: [],
-        plugins: [],
         preferences: {},
         toolInstances: [],
       }),
@@ -259,7 +236,6 @@ describe('DataStore migrations', () => {
       JSON.stringify({
         schemaVersion: 1,
         components: [{ id: testId, tracking: 'detected' }],
-        plugins: [],
         preferences: { rescanOnLaunch: true, setupComplete: false },
         toolInstances: [],
       }),
@@ -279,7 +255,6 @@ describe('DataStore migrations', () => {
       JSON.stringify({
         schemaVersion: 0,
         components: [],
-        plugins: [],
         preferences: {},
         toolInstances: [],
       }),
@@ -401,48 +376,6 @@ describe('DataStore component metadata', () => {
   });
 });
 
-// --- Plugin tests ----------------------------------------------------------
-
-describe('DataStore plugins', () => {
-  const testPlugin = {
-    name: 'test-plugin',
-    origin: { type: 'git' as const, url: 'https://github.com/test/plugin' },
-    version: '1.0.0',
-    components: [testId],
-  };
-
-  it('adds and retrieves a plugin', async () => {
-    const store = makeStore();
-    await store.load();
-
-    await store.setPlugin(testPlugin);
-    const plugins = await store.getPlugins();
-    expect(plugins).toHaveLength(1);
-    expect(plugins[0].name).toBe('test-plugin');
-  });
-
-  it('updates existing plugin', async () => {
-    const store = makeStore();
-    await store.load();
-
-    await store.setPlugin(testPlugin);
-    await store.setPlugin({ ...testPlugin, version: '2.0.0' });
-    const plugins = await store.getPlugins();
-    expect(plugins).toHaveLength(1);
-    expect(plugins[0].version).toBe('2.0.0');
-  });
-
-  it('removes a plugin', async () => {
-    const store = makeStore();
-    await store.load();
-
-    await store.setPlugin(testPlugin);
-    await store.removePlugin('test-plugin');
-    const plugins = await store.getPlugins();
-    expect(plugins).toHaveLength(0);
-  });
-});
-
 // --- Preferences tests -----------------------------------------------------
 
 describe('DataStore preferences', () => {
@@ -550,9 +483,6 @@ describe('DataStore.reset', () => {
     const prefs = await store.getPreferences();
     expect(prefs.rescanOnLaunch).toBe(true);
     expect(prefs.setupComplete).toBe(false);
-
-    const plugins = await store.getPlugins();
-    expect(plugins).toHaveLength(0);
 
     const instances = await store.getToolInstances();
     expect(instances).toHaveLength(0);

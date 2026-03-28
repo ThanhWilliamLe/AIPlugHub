@@ -285,10 +285,14 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
           action: c.conflictType === 'identical' ? 'skip' : 'install',
         }));
 
+        // Default all recommended sources to accepted (opt-out, not opt-in)
+        const defaultAcceptedSourceIds = (bundle.recommendedSources ?? []).map((s) => s.sourceId);
+
         set({
           bundle,
           conflicts,
           resolutions,
+          acceptedSourceIds: defaultAcceptedSourceIds,
           loading: false,
           activeWizard: 'import',
           importStep: 1,

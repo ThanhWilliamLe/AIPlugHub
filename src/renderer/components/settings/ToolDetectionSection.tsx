@@ -39,6 +39,12 @@ function ToolRow({
         {detected && tool?.version && (
           <p className="text-xs text-sand-muted mt-0.5">v{tool.version}</p>
         )}
+        {detected && tool?.cliAvailable === false && (
+          <p className="text-xs text-amber-600 mt-1">
+            CLI not found on PATH — install/uninstall operations will fail. Make sure the
+            command-line tool is installed.
+          </p>
+        )}
       </div>
     </div>
   );

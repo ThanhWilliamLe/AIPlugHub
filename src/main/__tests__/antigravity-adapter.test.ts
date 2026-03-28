@@ -770,20 +770,15 @@ describe('AntigravityAdapter -- name validation', () => {
     }
   });
 
-  it('install rejects names with forward slash', async () => {
+  it('install accepts namespaced names with forward slash', async () => {
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'foo/bar',
       core: { transport: 'stdio', command: 'echo' },
     };
 
-    try {
-      await adapter.install(portable, DEFAULT_TARGET);
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+    const result = await adapter.install(portable, DEFAULT_TARGET);
+    expect(result.id.name).toBe('foo/bar');
   });
 
   it('install rejects names with backslash', async () => {

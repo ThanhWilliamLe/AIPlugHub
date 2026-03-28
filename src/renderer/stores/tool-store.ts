@@ -12,7 +12,7 @@ import type {
   PluginUpdate,
   UpdateStatus,
 } from '@shared/types';
-import { componentIdEquals } from '@shared/utils';
+import { componentIdEquals, friendlyError } from '@shared/utils';
 
 export { componentIdEquals };
 
@@ -74,7 +74,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
       const tools = await window.aiplughub.tools.detect();
       set({ tools, loading: false });
     } catch (err) {
-      set({ loading: false, error: (err as Error).message });
+      set({ loading: false, error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -85,7 +85,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
       const components = await window.aiplughub.tools.scanAll();
       set({ components, scanning: false });
     } catch (err) {
-      set({ scanning: false, error: (err as Error).message });
+      set({ scanning: false, error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -114,7 +114,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
         components: state.components.map((c) =>
           componentIdEquals(c.id, id) ? { ...c, enabled: wasEnabled } : c,
         ),
-        error: (err as Error).message,
+        error: friendlyError((err as Error).message).message,
       }));
     }
   },
@@ -127,7 +127,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
         components: state.components.filter((c) => !componentIdEquals(c.id, id)),
       }));
     } catch (err) {
-      set({ error: (err as Error).message });
+      set({ error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -136,7 +136,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
       const plugins = await window.aiplughub.plugins.list();
       set({ plugins });
     } catch (err) {
-      set({ error: (err as Error).message });
+      set({ error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -161,7 +161,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
         plugins: state.plugins.map((p) =>
           p.pluginKey === pluginKey ? { ...p, enabled: wasEnabled } : p,
         ),
-        error: (err as Error).message,
+        error: friendlyError((err as Error).message).message,
       }));
     }
   },
@@ -174,7 +174,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
         components: state.components.filter((c) => c.extensions?.pluginKey !== pluginKey),
       }));
     } catch (err) {
-      set({ error: (err as Error).message });
+      set({ error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -190,7 +190,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
         isCheckingUpdates: false,
       });
     } catch (err) {
-      set({ isCheckingUpdates: false, error: (err as Error).message });
+      set({ isCheckingUpdates: false, error: friendlyError((err as Error).message).message });
     }
   },
 
@@ -214,7 +214,7 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
       set((state) => ({
         updateStatuses: {
           ...state.updateStatuses,
-          [pluginKey]: { state: 'failed', error: (err as Error).message },
+          [pluginKey]: { state: 'failed', error: friendlyError((err as Error).message).message },
         },
       }));
     }

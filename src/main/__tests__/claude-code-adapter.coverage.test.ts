@@ -3,10 +3,23 @@
  * that bring statement coverage above 90%.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(null, '', '');
+      },
+    ),
+  };
+});
+
 import { createClaudeCodeAdapter } from '../adapters/claude-code-adapter';
 import { createConfigIO } from '../config-io';
 import { createLogger } from '../logger';
@@ -253,7 +266,8 @@ describe('scanHooks — agent handler type', () => {
 // ---------------------------------------------------------------------------
 
 describe('installMcpServer — http transport with env', () => {
-  it('installs SSE server correctly', async () => {
+  it('installs SSE server via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'sse-server',
@@ -265,17 +279,25 @@ describe('installMcpServer — http transport with env', () => {
 
     const result = await adapter.install(portable, DEFAULT_TARGET);
     expect(result.id.name).toBe('sse-server');
-
-    const data = JSON.parse(
-      await (await import('fs/promises')).readFile(join(tempDir, '.claude.json'), 'utf-8'),
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      [
+        'mcp',
+        'add',
+        '--scope',
+        'user',
+        '-t',
+        'sse',
+        'sse-server',
+        'https://stream.example.com/sse',
+      ],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
     );
-    expect(data.mcpServers['sse-server']).toEqual({
-      type: 'sse',
-      url: 'https://stream.example.com/sse',
-    });
   });
 
-  it('installs stdio MCP with env object', async () => {
+  it('installs stdio MCP with env object via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'env-server',
@@ -289,18 +311,16 @@ describe('installMcpServer — http transport with env', () => {
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    const data = JSON.parse(
-      await (await import('fs/promises')).readFile(join(tempDir, '.claude.json'), 'utf-8'),
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      expect.arrayContaining(['-e', 'NODE_ENV=production', '-e', 'PORT=8080']),
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
     );
-    expect(data.mcpServers['env-server'].env).toEqual({ NODE_ENV: 'production', PORT: '8080' });
   });
 
-  it('warns but overwrites when MCP server already exists', async () => {
-    await writeFile(
-      join(tempDir, '.claude.json'),
-      JSON.stringify({ mcpServers: { 'existing-srv': { command: 'old' } } }),
-    );
-
+  it('overwrites when MCP server already exists (CLI handles it)', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'existing-srv',
@@ -309,10 +329,12 @@ describe('installMcpServer — http transport with env', () => {
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    const data = JSON.parse(
-      await (await import('fs/promises')).readFile(join(tempDir, '.claude.json'), 'utf-8'),
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'add', '--scope', 'user', '-t', 'stdio', 'existing-srv', 'new'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
     );
-    expect(data.mcpServers['existing-srv'].command).toBe('new');
   });
 });
 
@@ -431,8 +453,30 @@ describe('uninstallHook — error paths', () => {
 // uninstallMcpServer — missing config file
 // ---------------------------------------------------------------------------
 
-describe('uninstallMcpServer — missing config', () => {
-  it('throws COMPONENT_NOT_FOUND when .claude.json does not exist', async () => {
+describe('uninstallMcpServer — CLI delegation', () => {
+  it('delegates to claude mcp remove via CLI', async () => {
+    const cp = await import('child_process');
+    await adapter.uninstall({
+      tool: 'claude-code',
+      type: 'mcp-server',
+      name: 'nonexistent',
+      scope: 'user',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'remove', '--scope', 'user', 'nonexistent'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
+  });
+
+  it('throws CLI_EXEC_FAILED when CLI fails', async () => {
+    const cp = await import('child_process');
+    (cp.execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(new Error('Server not found'), '', '');
+      },
+    );
     try {
       await adapter.uninstall({
         tool: 'claude-code',
@@ -443,7 +487,7 @@ describe('uninstallMcpServer — missing config', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
+      expect((err as AppError).code).toBe('CLI_EXEC_FAILED');
     }
   });
 });

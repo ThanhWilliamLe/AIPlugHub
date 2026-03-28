@@ -10,7 +10,6 @@
 import type {
   ComponentId,
   ComponentMetadata,
-  Plugin,
   ToolInstance,
   UserPreferences,
 } from '@shared/types';
@@ -25,9 +24,6 @@ export interface DataStore {
   getComponents(): Promise<ComponentMetadata[]>;
   setComponentMeta(id: ComponentId, meta: Partial<ComponentMetadata>): Promise<void>;
   removeComponentMeta(id: ComponentId): Promise<void>;
-  getPlugins(): Promise<Plugin[]>;
-  setPlugin(plugin: Plugin): Promise<void>;
-  removePlugin(name: string): Promise<void>;
   getPreferences(): Promise<UserPreferences>;
   setPreferences(prefs: Partial<UserPreferences>): Promise<void>;
   getToolInstances(): Promise<ToolInstance[]>;
@@ -44,7 +40,6 @@ const CURRENT_SCHEMA_VERSION = 1;
 type DataStoreSchema = {
   schemaVersion: number;
   components: ComponentMetadata[];
-  plugins: Plugin[];
   preferences: UserPreferences;
   toolInstances: ToolInstance[];
 };
@@ -53,7 +48,6 @@ function defaultSchema(): DataStoreSchema {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     components: [],
-    plugins: [],
     preferences: { rescanOnLaunch: true, setupComplete: false },
     toolInstances: [],
   };
@@ -154,7 +148,6 @@ export function createDataStore(
 
         // Ensure all expected fields exist (defensive against partial files)
         data.components ??= [];
-        data.plugins ??= [];
         data.preferences ??= { rescanOnLaunch: true, setupComplete: false };
         data.toolInstances ??= [];
 
@@ -162,7 +155,6 @@ export function createDataStore(
 
         logger.info(MODULE, `Loaded data file: ${filePath}`, {
           components: data.components.length,
-          plugins: data.plugins.length,
           toolInstances: data.toolInstances.length,
         });
       } catch (err) {
@@ -213,28 +205,6 @@ export function createDataStore(
       ensureLoaded();
       const key = componentIdKey(id);
       data.components = data.components.filter((c) => componentIdKey(c.id) !== key);
-      await save();
-    },
-
-    async getPlugins(): Promise<Plugin[]> {
-      ensureLoaded();
-      return [...data.plugins];
-    },
-
-    async setPlugin(plugin: Plugin): Promise<void> {
-      ensureLoaded();
-      const idx = data.plugins.findIndex((p) => p.name === plugin.name);
-      if (idx >= 0) {
-        data.plugins[idx] = plugin;
-      } else {
-        data.plugins.push(plugin);
-      }
-      await save();
-    },
-
-    async removePlugin(name: string): Promise<void> {
-      ensureLoaded();
-      data.plugins = data.plugins.filter((p) => p.name !== name);
       await save();
     },
 

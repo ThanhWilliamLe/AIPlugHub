@@ -77,7 +77,7 @@ export type UserPreferences = {
   rescanOnLaunch: boolean;
   setupComplete: boolean;
   // githubToken is stored in SecretStore, not here — never persist tokens in plaintext
-  marketplaceSources?: import('./marketplace').MarketplaceSourceConfig[];
+  // NOTE: marketplace sources are managed by Claude Code (CLI), not stored here
   /** Auto-check for plugin updates on launch (USR-06, default: false) */
   autoCheckUpdates?: boolean;
   /** ISO 8601 timestamp of last update check (USR-06) */

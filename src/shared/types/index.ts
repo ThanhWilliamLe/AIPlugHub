@@ -39,7 +39,6 @@ export {
 
 export type {
   PluginOrigin,
-  Plugin,
   ConfigRequirement,
   PortableComponent,
   PortablePlugin,

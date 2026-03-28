@@ -166,11 +166,6 @@ contextBridge.exposeInMainWorld('aiplughub', {
       return unwrap(result);
     },
 
-    async updateSource(sourceId: string, config: unknown) {
-      const result = await ipcRenderer.invoke('settings:updateSource', sourceId, config);
-      return unwrap(result);
-    },
-
     async removeSource(sourceId: string) {
       const result = await ipcRenderer.invoke('settings:removeSource', sourceId);
       return unwrap(result);

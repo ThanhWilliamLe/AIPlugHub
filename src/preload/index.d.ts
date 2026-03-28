@@ -100,10 +100,6 @@ export interface AiPlugHubAPI {
   settings: {
     getSources(): Promise<MarketplaceSourceConfig[]>;
     addSource(config: NewSourceConfig): Promise<MarketplaceSourceConfig>;
-    updateSource(
-      sourceId: string,
-      config: Partial<NewSourceConfig>,
-    ): Promise<MarketplaceSourceConfig>;
     removeSource(sourceId: string): Promise<void>;
   };
 

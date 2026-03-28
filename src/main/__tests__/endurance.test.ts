@@ -226,25 +226,6 @@ describe('Endurance: DataStore CRUD churn', () => {
     ).toBeLessThan(MAX_DEGRADATION_RATIO);
   }, 60_000);
 
-  it('repeated setPlugin / removePlugin leaves plugin list empty after 500 cycles', async () => {
-    const CYCLES = 500;
-    const configIO = makeInMemoryConfigIO();
-    const store = createDataStore('/mock/data.json', configIO, mockLogger);
-    await store.load();
-
-    for (let i = 0; i < CYCLES; i++) {
-      await store.setPlugin({
-        name: `plugin-${i % 20}`,
-        origin: { type: 'git', url: `https://example.com/plugin-${i % 20}` },
-        components: [],
-      });
-      await store.removePlugin(`plugin-${i % 20}`);
-    }
-
-    const plugins = await store.getPlugins();
-    expect(plugins).toHaveLength(0);
-  }, 60_000);
-
   it('repeated setToolInstance / removeToolInstance leaves instances list empty after 500 cycles', async () => {
     const CYCLES = 500;
     const configIO = makeInMemoryConfigIO();

@@ -52,7 +52,6 @@ const mockAiPlugHubAPI = {
   settings: {
     getSources: vi.fn().mockResolvedValue([]),
     addSource: vi.fn().mockResolvedValue({}),
-    updateSource: vi.fn().mockResolvedValue({}),
     removeSource: vi.fn().mockResolvedValue(undefined),
   },
   preferences: {
