@@ -28,9 +28,10 @@ function makeComponent(overrides: Partial<Component> = {}): Component {
 
 function makeToolResult(overrides: Partial<ToolDetectionResult> = {}): ToolDetectionResult {
   return {
-    tool: 'claude-code',
+    toolId: 'claude-code',
+    instanceId: 'claude-code',
+    path: '/usr/bin/claude',
     detected: true,
-    configPaths: [],
     ...overrides,
   };
 }
@@ -92,7 +93,7 @@ describe('detectTools', () => {
   });
 
   it('sets tools on success', async () => {
-    const tools = [makeToolResult(), makeToolResult({ tool: 'claude-desktop' })];
+    const tools = [makeToolResult(), makeToolResult({ toolId: 'claude-desktop', instanceId: 'claude-desktop', path: '/usr/bin/claude-desktop' })];
     vi.mocked(window.aiplughub.tools.detect).mockResolvedValueOnce(tools);
 
     await useToolStore.getState().detectTools();
@@ -407,7 +408,7 @@ describe('setComponents', () => {
 
 describe('setTools', () => {
   it('replaces all tools', () => {
-    const tools = [makeToolResult(), makeToolResult({ tool: 'claude-desktop' })];
+    const tools = [makeToolResult(), makeToolResult({ toolId: 'claude-desktop', instanceId: 'claude-desktop', path: '/usr/bin/claude-desktop' })];
 
     useToolStore.getState().setTools(tools);
 

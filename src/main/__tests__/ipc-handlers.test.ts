@@ -124,14 +124,12 @@ function createMockDataStore(): DataStore {
     getComponents: vi.fn().mockResolvedValue([]),
     setComponentMeta: vi.fn().mockResolvedValue(undefined),
     removeComponentMeta: vi.fn().mockResolvedValue(undefined),
-    getPlugins: vi.fn().mockResolvedValue([]),
-    setPlugin: vi.fn().mockResolvedValue(undefined),
-    removePlugin: vi.fn().mockResolvedValue(undefined),
     getPreferences: vi.fn().mockResolvedValue({ rescanOnLaunch: true, setupComplete: false }),
     setPreferences: vi.fn().mockResolvedValue(undefined),
     getToolInstances: vi.fn().mockResolvedValue(toolInstances),
     setToolInstance: vi.fn().mockResolvedValue(undefined),
     removeToolInstance: vi.fn().mockResolvedValue(undefined),
+    batch: vi.fn(async (fn: () => Promise<void>) => fn()),
   };
 }
 
@@ -198,7 +196,7 @@ function makeDeps(overrides?: Partial<HandlerDeps>): HandlerDeps {
       refreshSources: vi.fn().mockResolvedValue(undefined),
       getSources: vi.fn().mockResolvedValue([]),
       addSource: vi.fn().mockResolvedValue({}),
-      updateSource: vi.fn().mockResolvedValue({}),
+
       removeSource: vi.fn().mockResolvedValue(undefined),
       init: vi.fn().mockResolvedValue(undefined),
       checkForUpdates: vi
@@ -1054,7 +1052,7 @@ describe('bundles:detectConflicts', () => {
     }
   });
 
-  it('includes components from plugins in conflict detection', async () => {
+  it('treats plugins as atomic — their sub-components are excluded from conflict detection', async () => {
     const bundle: Bundle = {
       formatVersion: '2.0',
       name: 'with-plugins',
@@ -1068,7 +1066,7 @@ describe('bundles:detectConflicts', () => {
           components: [
             {
               type: 'mcp-server',
-              name: 'server1', // conflicts with existing
+              name: 'server1', // would conflict if included, but plugins are atomic
               sourceTools: ['claude-code'],
               core: { transport: 'stdio', command: 'x' },
             },
@@ -1079,10 +1077,14 @@ describe('bundles:detectConflicts', () => {
 
     const result = (await invoke('bundles:detectConflicts', bundle)) as IpcResult<{
       conflicts: unknown[];
+      newComponents: unknown[];
     }>;
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.conflicts).toHaveLength(1);
+      // Plugin sub-components are not sent to conflict detection —
+      // the plugin is the atomic install unit (Phase 1)
+      expect(result.data.conflicts).toHaveLength(0);
+      expect(result.data.newComponents).toHaveLength(0);
     }
   });
 
@@ -1123,6 +1125,7 @@ describe('bundles:import', () => {
       expect(result.data.skipped).toHaveLength(0);
       expect(result.data.failed).toHaveLength(0);
     }
+    expect(mockDataStore.batch).toHaveBeenCalledTimes(1);
   });
 
   it('skips components when resolution action is skip', async () => {
@@ -1456,7 +1459,7 @@ describe('browse:getEntries', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1482,7 +1485,7 @@ describe('browse:getEntries', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1512,7 +1515,7 @@ describe('browse:getDetail', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1539,7 +1542,7 @@ describe('browse:getDetail', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1574,7 +1577,7 @@ describe('browse:install', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1602,7 +1605,7 @@ describe('browse:install', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1633,7 +1636,7 @@ describe('browse:refreshSources', () => {
       refreshSources: vi.fn().mockResolvedValue(undefined),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1656,7 +1659,7 @@ describe('browse:refreshSources', () => {
       refreshSources: vi.fn().mockRejectedValue(new Error('network down')),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1686,7 +1689,7 @@ describe('settings:getSources', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn().mockResolvedValue(sources),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1711,7 +1714,7 @@ describe('settings:getSources', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn().mockRejectedValue(new Error('store failure')),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1739,7 +1742,7 @@ describe('settings:addSource (security boundary)', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn().mockResolvedValue(added),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1804,7 +1807,7 @@ describe('settings:addSource (security boundary)', () => {
       addSource: vi
         .fn()
         .mockRejectedValue(new AppError('DUPLICATE_SOURCE', 'Already exists', true)),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn(),
       init: vi.fn(),
     };
@@ -1823,64 +1826,6 @@ describe('settings:addSource (security boundary)', () => {
   });
 });
 
-// ─── settings:updateSource ───────────────────────────────────────────
-
-describe('settings:updateSource', () => {
-  it('delegates to marketplace.updateSource', async () => {
-    const updated = { id: 'src1', url: 'https://new.example.com', name: 'Updated', enabled: true };
-    const mockMarketplace = {
-      getEntries: vi.fn(),
-      getDetail: vi.fn(),
-      install: vi.fn(),
-      refreshSources: vi.fn(),
-      getSources: vi.fn(),
-      addSource: vi.fn(),
-      updateSource: vi.fn().mockResolvedValue(updated),
-      removeSource: vi.fn(),
-      init: vi.fn(),
-    };
-
-    mockIpcMain = createMockIpcMain();
-    registerIpcHandlers(
-      makeDeps({ marketplace: mockMarketplace as unknown as HandlerDeps['marketplace'] }),
-    );
-
-    const result = (await invoke('settings:updateSource', 'src1', {
-      name: 'Updated',
-    })) as IpcResult<unknown>;
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toEqual(updated);
-    }
-    expect(mockMarketplace.updateSource).toHaveBeenCalledWith('src1', { name: 'Updated' });
-  });
-
-  it('wraps errors in IpcResult', async () => {
-    const mockMarketplace = {
-      getEntries: vi.fn(),
-      getDetail: vi.fn(),
-      install: vi.fn(),
-      refreshSources: vi.fn(),
-      getSources: vi.fn(),
-      addSource: vi.fn(),
-      updateSource: vi.fn().mockRejectedValue(new AppError('SOURCE_NOT_FOUND', 'Missing', true)),
-      removeSource: vi.fn(),
-      init: vi.fn(),
-    };
-
-    mockIpcMain = createMockIpcMain();
-    registerIpcHandlers(
-      makeDeps({ marketplace: mockMarketplace as unknown as HandlerDeps['marketplace'] }),
-    );
-
-    const result = (await invoke('settings:updateSource', 'missing-src', {})) as IpcResult<unknown>;
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('SOURCE_NOT_FOUND');
-    }
-  });
-});
-
 // ─── settings:removeSource ───────────────────────────────────────────
 
 describe('settings:removeSource', () => {
@@ -1892,7 +1837,7 @@ describe('settings:removeSource', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn().mockResolvedValue(undefined),
       init: vi.fn(),
     };
@@ -1915,7 +1860,7 @@ describe('settings:removeSource', () => {
       refreshSources: vi.fn(),
       getSources: vi.fn(),
       addSource: vi.fn(),
-      updateSource: vi.fn(),
+
       removeSource: vi.fn().mockRejectedValue(new Error('cannot remove built-in')),
       init: vi.fn(),
     };
@@ -2410,7 +2355,6 @@ describe('handler registration', () => {
       'browse:getSuggestedSources',
       'settings:getSources',
       'settings:addSource',
-      'settings:updateSource',
       'settings:removeSource',
       'preferences:get',
       'preferences:set',
@@ -2442,7 +2386,7 @@ describe('handler registration', () => {
 
   it('registers exactly the expected number of channels', () => {
     const registeredChannels = mockIpcMain.handle.mock.calls.map((c: unknown[]) => c[0]);
-    expect(registeredChannels).toHaveLength(47);
+    expect(registeredChannels).toHaveLength(46);
   });
 });
 

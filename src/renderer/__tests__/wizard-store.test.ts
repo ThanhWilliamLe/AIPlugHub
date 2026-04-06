@@ -799,6 +799,134 @@ describe('confirmConfigs', () => {
     };
     expect(result.core.env).toBeUndefined();
   });
+
+  it('adds accepted recommended sources before installing', async () => {
+    const componentWithConfig = makePortable({
+      name: 'api-server',
+      core: { transport: 'stdio' as const, command: 'api-cmd' },
+      requiredConfig: [{ key: 'API_KEY', sensitive: true, envVar: 'API_KEY' }],
+    });
+
+    useWizardStore.setState({
+      activeWizard: 'import',
+      componentsToInstall: [componentWithConfig],
+      pluginsToInstall: [],
+      configValues: { 'api-server::API_KEY': 'secret' },
+      resolutions: [],
+      showingConfigPrompts: true,
+      acceptedSourceIds: ['my-source'],
+      bundle: {
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '', appVersion: '1.9.0' },
+        recommendedSources: [
+          {
+            sourceId: 'my-source',
+            url: 'https://github.com/test/repo',
+            displayName: 'Test Source',
+            sourceType: 'git-marketplace' as const,
+          },
+        ],
+        plugins: [],
+        components: [],
+      },
+    });
+
+    await useWizardStore.getState().confirmConfigs();
+
+    expect(window.aiplughub.settings.addSource).toHaveBeenCalledWith({
+      sourceType: 'git-marketplace',
+      url: 'https://github.com/test/repo',
+      displayName: 'Test Source',
+    });
+    expect(window.aiplughub.bundles.importBundle).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recommended sources during import
+// ---------------------------------------------------------------------------
+
+describe('executeImport — recommended sources', () => {
+  it('adds accepted sources before installing (no config prompts)', async () => {
+    const comp = makePortable({ name: 'plain' });
+
+    vi.mocked(window.aiplughub.bundles.detectConflicts).mockResolvedValueOnce({
+      newComponents: [comp],
+      conflicts: [],
+      incompatible: [],
+    });
+
+    useWizardStore.setState({
+      activeWizard: 'import',
+      importStep: 1,
+      acceptedSourceIds: ['src-1'],
+      bundle: {
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '', appVersion: '1.9.0' },
+        recommendedSources: [
+          {
+            sourceId: 'src-1',
+            url: 'https://github.com/test/source',
+            displayName: 'Source One',
+            sourceType: 'git-marketplace' as const,
+          },
+          {
+            sourceId: 'src-2',
+            url: 'https://github.com/test/other',
+            displayName: 'Source Two',
+            sourceType: 'git-marketplace' as const,
+          },
+        ],
+        plugins: [],
+        components: [],
+      },
+      conflicts: { newComponents: [comp], conflicts: [], incompatible: [] },
+      resolutions: [{ action: 'install' as const, component: comp }],
+    });
+
+    await useWizardStore.getState().executeImport();
+
+    // Should add only accepted source (src-1), not src-2
+    expect(window.aiplughub.settings.addSource).toHaveBeenCalledTimes(1);
+    expect(window.aiplughub.settings.addSource).toHaveBeenCalledWith({
+      sourceType: 'git-marketplace',
+      url: 'https://github.com/test/source',
+      displayName: 'Source One',
+    });
+  });
+
+  it('does not call addSource when no sources are accepted', async () => {
+    const comp = makePortable({ name: 'plain' });
+
+    useWizardStore.setState({
+      activeWizard: 'import',
+      importStep: 1,
+      acceptedSourceIds: [],
+      bundle: {
+        formatVersion: '2.0',
+        target: { scope: 'user', toolId: 'claude-code' },
+        exportedFrom: { date: '', appVersion: '1.9.0' },
+        recommendedSources: [
+          {
+            sourceId: 'src-1',
+            url: 'https://github.com/test/source',
+            displayName: 'Source One',
+            sourceType: 'git-marketplace' as const,
+          },
+        ],
+        plugins: [],
+        components: [],
+      },
+      conflicts: { newComponents: [comp], conflicts: [], incompatible: [] },
+      resolutions: [{ action: 'install' as const, component: comp }],
+    });
+
+    await useWizardStore.getState().executeImport();
+
+    expect(window.aiplughub.settings.addSource).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -806,20 +934,20 @@ describe('confirmConfigs', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildDefaultFilename', () => {
-  it('uses singular "plugin" when count is 1', () => {
+  it('uses singular "component" when count is 1', () => {
     const ids = [makeId({ tool: 'claude-code' })];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-1-plugin-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-1-component-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('uses plural "plugins" when count > 1', () => {
+  it('uses plural "components" when count > 1', () => {
     const ids = [
       makeId({ tool: 'claude-code', name: 'a' }),
       makeId({ tool: 'claude-code', name: 'b' }),
       makeId({ tool: 'claude-code', name: 'c' }),
     ];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-3-plugins-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-3-components-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
   it('includes multiple tool names sorted alphabetically', () => {
@@ -830,7 +958,7 @@ describe('buildDefaultFilename', () => {
     ];
     const result = buildDefaultFilename(ids);
     expect(result).toMatch(
-      /^plughub-3-plugins-claude-code-claude-desktop-gemini-cli-\d{4}-\d{2}-\d{2}$/,
+      /^plughub-3-components-claude-code-claude-desktop-gemini-cli-\d{4}-\d{2}-\d{2}$/,
     );
   });
 
@@ -840,7 +968,7 @@ describe('buildDefaultFilename', () => {
       makeId({ tool: 'claude-code', name: 'b' }),
     ];
     const result = buildDefaultFilename(ids);
-    expect(result).toMatch(/^plughub-2-plugins-claude-code-\d{4}-\d{2}-\d{2}$/);
+    expect(result).toMatch(/^plughub-2-components-claude-code-\d{4}-\d{2}-\d{2}$/);
   });
 
   it("includes today's date in YYYY-MM-DD format", () => {
@@ -850,16 +978,16 @@ describe('buildDefaultFilename', () => {
     expect(result).toContain(today);
   });
 
-  it('produces correct format for 12 plugins across one tool', () => {
+  it('produces correct format for 12 components across one tool', () => {
     const ids = Array.from({ length: 12 }, (_, i) =>
       makeId({ tool: 'claude-code', name: `item-${i}` }),
     );
     const result = buildDefaultFilename(ids);
     const today = new Date().toISOString().slice(0, 10);
-    expect(result).toBe(`plughub-12-plugins-claude-code-${today}`);
+    expect(result).toBe(`plughub-12-components-claude-code-${today}`);
   });
 
-  it('produces correct format for 5 plugins across two tools', () => {
+  it('produces correct format for 5 components across two tools', () => {
     const ids = [
       makeId({ tool: 'claude-code', name: 'a' }),
       makeId({ tool: 'claude-code', name: 'b' }),
@@ -869,6 +997,6 @@ describe('buildDefaultFilename', () => {
     ];
     const result = buildDefaultFilename(ids);
     const today = new Date().toISOString().slice(0, 10);
-    expect(result).toBe(`plughub-5-plugins-claude-code-claude-desktop-${today}`);
+    expect(result).toBe(`plughub-5-components-claude-code-claude-desktop-${today}`);
   });
 });

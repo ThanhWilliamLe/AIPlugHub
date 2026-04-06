@@ -94,7 +94,7 @@ export function buildDefaultFilename(selectedIds: ComponentId[]): string {
   const date = new Date().toISOString().slice(0, 10);
   const uniqueTools = [...new Set(selectedIds.map((id) => id.tool))].sort();
   const toolSuffix = uniqueTools.join('-');
-  const noun = count === 1 ? 'plugin' : 'plugins';
+  const noun = count === 1 ? 'component' : 'components';
   return `plughub-${count}-${noun}-${toolSuffix}-${date}`;
 }
 
@@ -399,7 +399,27 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
 
     // Fix H1: patch components with config values, then install
     confirmConfigs: async () => {
-      const { componentsToInstall, pluginsToInstall, configValues } = get();
+      const { componentsToInstall, pluginsToInstall, configValues, acceptedSourceIds, bundle } =
+        get();
+
+      // Add accepted recommended sources before installing (same as executeImport no-config path)
+      if (acceptedSourceIds.length > 0 && bundle?.recommendedSources) {
+        for (const srcId of acceptedSourceIds) {
+          const src = bundle.recommendedSources.find((s) => s.sourceId === srcId);
+          if (src) {
+            try {
+              await window.aiplughub.settings.addSource({
+                sourceType: src.sourceType,
+                url: src.url,
+                displayName: src.displayName,
+              });
+            } catch {
+              // Best-effort — don't block import if source add fails
+            }
+          }
+        }
+      }
+
       const patched = patchWithConfigValues(componentsToInstall, configValues);
       await doInstall(patched, pluginsToInstall);
     },

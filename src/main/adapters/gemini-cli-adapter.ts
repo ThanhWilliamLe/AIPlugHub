@@ -38,7 +38,7 @@ import type {
 import { AppError } from '@shared/types';
 import { TOOL_COMPONENTS, CACHE_PATTERNS } from '@shared/constants';
 import { join, basename, resolve } from 'path';
-import { stat, mkdir, rm } from 'fs/promises';
+import { stat, mkdir } from 'fs/promises';
 import * as yaml from 'js-yaml';
 
 // -- Types for Gemini CLI config structures --
@@ -115,7 +115,7 @@ export function createGeminiCliAdapter(
   // -- Helpers --
 
   function validateName(name: string): void {
-    if (name.includes('..') || name.includes('/') || name.includes('\\') || name.includes('\0')) {
+    if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
       throw new AppError(
         'CONFIG_PERMISSION',
         `Component name contains invalid characters: "${name}"`,
@@ -524,10 +524,18 @@ export function createGeminiCliAdapter(
             scanExtensionContext(entry, manifest, enabled),
           ]);
 
-          // Strip `enabled` — canToggle() is false for Gemini CLI, so exposing
-          // it would show a non-functional toggle and dim disabled rows.
           const all = [...mcpServers, ...skills, ...commands, ...hooks, ...agents, ...context];
-          for (const c of all) delete (c as Record<string, unknown>).enabled;
+          // Strip `enabled` from types that can't be toggled — prevents confusing disabled UI rows
+          for (const c of all) {
+            if (
+              c.id.type === 'hook' ||
+              c.id.type === 'command' ||
+              c.id.type === 'agent' ||
+              c.id.type === 'context-file'
+            ) {
+              delete (c as Record<string, unknown>).enabled;
+            }
+          }
           components.push(...all);
         } catch (err) {
           logger.warn(MODULE, `Failed to scan extension: ${entry}`, err);
@@ -572,55 +580,31 @@ export function createGeminiCliAdapter(
     _target: InstallTarget,
   ): Promise<Component> {
     validateName(portable.name);
-
-    const cfgPath = settingsPath();
-    let data: GeminiSettingsData = {};
-
-    try {
-      if (await configIO.exists(cfgPath)) {
-        data = (await configIO.readJSON(cfgPath)) as GeminiSettingsData;
-      }
-    } catch (err) {
-      if (err instanceof AppError && err.code === 'CONFIG_CORRUPTED') {
-        logger.warn(MODULE, `Config corrupted, starting fresh: ${cfgPath}`, err);
-      } else {
-        throw err;
-      }
-    }
-
-    if (!data.mcpServers) data.mcpServers = {};
-
+    const { execCli } = await import('./cli-exec');
     const core = portable.core as McpServerCore;
-    let serverConfig: Record<string, unknown>;
 
+    const args = ['mcp', 'add', '--scope', 'user', '-t', core.transport ?? 'stdio'];
     if (core.transport === 'stdio') {
-      serverConfig = { command: core.command };
-      if (core.args) serverConfig.args = core.args;
-      if (core.env) serverConfig.env = core.env;
-    } else {
-      serverConfig = { url: core.url };
-      if (core.headers) serverConfig.headers = core.headers;
-    }
-
-    // Merge Gemini-specific extensions
-    if (portable.extensions) {
-      for (const key of ['cwd', 'trust', 'includeTools', 'excludeTools', 'timeout']) {
-        if (portable.extensions[key] !== undefined) {
-          serverConfig[key] = portable.extensions[key];
+      if (core.env) {
+        for (const [k, v] of Object.entries(core.env)) {
+          args.push('-e', `${k}=${v}`);
         }
       }
+      args.push(portable.name);
+      if (core.command) args.push(core.command);
+      if (core.args) args.push(...core.args);
+    } else {
+      args.push(portable.name);
+      if (core.url) args.push(core.url);
     }
 
-    if (data.mcpServers[portable.name]) {
-      logger.warn(MODULE, `Overwriting existing MCP server "${portable.name}"`);
-    }
-    data.mcpServers[portable.name] = serverConfig;
-    await configIO.writeJSON(cfgPath, data);
+    await execCli('gemini', args);
+    logger.info(MODULE, `MCP server "${portable.name}" installed via Gemini CLI`);
 
     return {
       id: { tool: TOOL_ID, type: 'mcp-server', name: portable.name, scope: 'user' },
       core,
-      configPath: cfgPath,
+      configPath: settingsPath(),
       tracking: 'managed',
     };
   }
@@ -630,7 +614,8 @@ export function createGeminiCliAdapter(
     _target: InstallTarget,
   ): Promise<Component> {
     validateName(portable.name);
-    // Skills install into a standalone skills directory (not extension-bound)
+    // File I/O justified: `gemini skills install` expects a source URL/path,
+    // but we have inline content from bundles/marketplace. No CLI for piped content.
     const skillDir = join(rootPath, 'skills', portable.name);
     assertPathWithin(skillDir, rootPath);
     await mkdir(skillDir, { recursive: true });
@@ -655,46 +640,36 @@ export function createGeminiCliAdapter(
 
   // -- Uninstall --
 
+  async function uninstallExtension(extName: string): Promise<void> {
+    const { execCli } = await import('./cli-exec');
+    await execCli('gemini', ['extensions', 'uninstall', extName], {
+      successPattern: 'successfully uninstalled',
+    });
+    logger.info(MODULE, `Extension "${extName}" uninstalled via Gemini CLI`);
+  }
+
   async function uninstallMcpServer(id: ComponentId): Promise<void> {
     validateName(id.name);
 
-    // Extension MCP servers can't be uninstalled individually
     if (id.scope.startsWith('extension:')) {
-      throw new AppError(
-        'ADAPTER_UNSUPPORTED',
-        `Extension MCP servers must be uninstalled with their extension. Use "gemini extensions uninstall".`,
-        false,
-      );
+      return uninstallExtension(id.scope.slice('extension:'.length));
     }
 
-    const cfgPath = settingsPath();
-    if (!(await configIO.exists(cfgPath))) {
-      throw new AppError('COMPONENT_NOT_FOUND', `Config file not found: ${cfgPath}`, true);
-    }
-
-    const data = (await configIO.readJSON(cfgPath)) as GeminiSettingsData;
-    if (!data.mcpServers || !(id.name in data.mcpServers)) {
-      throw new AppError('COMPONENT_NOT_FOUND', `MCP server "${id.name}" not found`, true);
-    }
-
-    delete data.mcpServers[id.name];
-    await configIO.writeJSON(cfgPath, data);
+    const { execCli } = await import('./cli-exec');
+    await execCli('gemini', ['mcp', 'remove', '--scope', 'user', id.name]);
+    logger.info(MODULE, `MCP server "${id.name}" removed via Gemini CLI`);
   }
 
   async function uninstallSkill(id: ComponentId): Promise<void> {
     validateName(id.name);
 
     if (id.scope.startsWith('extension:')) {
-      throw new AppError(
-        'ADAPTER_UNSUPPORTED',
-        `Extension skills must be uninstalled with their extension.`,
-        false,
-      );
+      return uninstallExtension(id.scope.slice('extension:'.length));
     }
 
-    const skillDir = join(rootPath, 'skills', id.name);
-    assertPathWithin(skillDir, rootPath);
-    await rm(skillDir, { recursive: true, force: true });
+    const { execCli } = await import('./cli-exec');
+    await execCli('gemini', ['skills', 'uninstall', '--scope', 'user', id.name]);
+    logger.info(MODULE, `Skill "${id.name}" uninstalled via Gemini CLI`);
   }
 
   // -- ToolAdapter implementation --
@@ -707,8 +682,18 @@ export function createGeminiCliAdapter(
     async detect(): Promise<ToolDetectionResult> {
       // Detect by settings.json — configIO.exists uses isFile(), directory checks won't work
       const detected = await configIO.exists(settingsPath());
-      logger.info(MODULE, `detect: ${rootPath} → ${detected}`);
-      return { toolId: TOOL_ID, instanceId, path: rootPath, detected };
+      let cliAvailable: boolean | undefined;
+      if (detected) {
+        try {
+          const { execCli } = await import('./cli-exec');
+          await execCli('gemini', ['--version'], { timeout: 5_000 });
+          cliAvailable = true;
+        } catch {
+          cliAvailable = false;
+        }
+      }
+      logger.info(MODULE, `detect: ${rootPath} → ${detected} (cli: ${cliAvailable})`);
+      return { toolId: TOOL_ID, instanceId, path: rootPath, detected, cliAvailable };
     },
 
     async scan(): Promise<Component[]> {
@@ -750,6 +735,11 @@ export function createGeminiCliAdapter(
     async uninstall(id) {
       logger.info(MODULE, `Uninstalling ${id.type} "${id.name}"`);
 
+      // Extension-scoped components are uninstalled via the Gemini CLI
+      if (id.scope.startsWith('extension:')) {
+        return uninstallExtension(id.scope.slice('extension:'.length));
+      }
+
       switch (id.type) {
         case 'mcp-server':
           return uninstallMcpServer(id);
@@ -758,30 +748,58 @@ export function createGeminiCliAdapter(
         default:
           throw new AppError(
             'ADAPTER_UNSUPPORTED',
-            `Gemini CLI uninstall not supported for type "${id.type}". Use "gemini extensions uninstall".`,
+            `Gemini CLI uninstall not supported for type "${id.type}".`,
             false,
           );
       }
     },
 
-    async enable() {
-      throw new AppError(
-        'ADAPTER_UNSUPPORTED',
-        'Gemini CLI component toggle must be done via "gemini extensions enable/disable"',
-        false,
-      );
+    async enable(id: ComponentId) {
+      const { execCli } = await import('./cli-exec');
+
+      if (id.scope.startsWith('extension:')) {
+        const extName = id.scope.slice('extension:'.length);
+        await execCli('gemini', ['extensions', 'enable', extName]);
+        logger.info(MODULE, `Extension "${extName}" enabled via Gemini CLI`);
+        return;
+      }
+
+      const typeCmd = id.type === 'mcp-server' ? 'mcp' : id.type === 'skill' ? 'skills' : null;
+      if (!typeCmd) {
+        throw new AppError(
+          'ADAPTER_UNSUPPORTED',
+          `Enable not supported for type "${id.type}"`,
+          false,
+        );
+      }
+      await execCli('gemini', [typeCmd, 'enable', id.name]);
+      logger.info(MODULE, `${id.type} "${id.name}" enabled via Gemini CLI`);
     },
 
-    async disable() {
-      throw new AppError(
-        'ADAPTER_UNSUPPORTED',
-        'Gemini CLI component toggle must be done via "gemini extensions enable/disable"',
-        false,
-      );
+    async disable(id: ComponentId) {
+      const { execCli } = await import('./cli-exec');
+
+      if (id.scope.startsWith('extension:')) {
+        const extName = id.scope.slice('extension:'.length);
+        await execCli('gemini', ['extensions', 'disable', extName]);
+        logger.info(MODULE, `Extension "${extName}" disabled via Gemini CLI`);
+        return;
+      }
+
+      const typeCmd = id.type === 'mcp-server' ? 'mcp' : id.type === 'skill' ? 'skills' : null;
+      if (!typeCmd) {
+        throw new AppError(
+          'ADAPTER_UNSUPPORTED',
+          `Disable not supported for type "${id.type}"`,
+          false,
+        );
+      }
+      await execCli('gemini', [typeCmd, 'disable', id.name]);
+      logger.info(MODULE, `${id.type} "${id.name}" disabled via Gemini CLI`);
     },
 
-    canToggle() {
-      return false;
+    canToggle(type: ComponentType) {
+      return type === 'mcp-server' || type === 'skill';
     },
 
     getConfigPath(id: ComponentId): string {

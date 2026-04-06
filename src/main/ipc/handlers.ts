@@ -540,11 +540,9 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
         // Get detected tool IDs
         const detectedToolIds = registry.getAllAdapters().map((a) => a.toolId);
 
-        // Collect all components from bundle (top-level + plugin components)
-        const incoming: PortableComponent[] = [
-          ...bundle.components,
-          ...bundle.plugins.flatMap((p) => p.components),
-        ];
+        // Only standalone components go through conflict detection.
+        // Plugin sub-components are atomic with their plugin — Phase 1 handles them.
+        const incoming: PortableComponent[] = [...bundle.components];
 
         const manifest = detectConflicts(incoming, allComponents, detectedToolIds);
         return ok(manifest);
@@ -579,172 +577,191 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
         const instances = await dataStore.getToolInstances();
         let progressIdx = 0;
 
-        // R3: Create ONE backup before the import loop (batch context)
+        // R3: Create ONE backup before the import loop — only for instances that will be used
         if (totalItems > 0) {
-          for (const instance of instances) {
+          const usedInstanceIds = new Set<string>();
+          for (const plugin of pluginList) {
+            const inst = instances.find((t) => t.toolId === 'claude-code') ?? instances[0];
+            if (inst) usedInstanceIds.add(inst.instanceId);
+          }
+          for (const comp of components) {
+            const targetTool = comp.sourceTools?.[0];
+            const inst = targetTool ? instances.find((t) => t.toolId === targetTool) : instances[0];
+            if (inst) usedInstanceIds.add(inst.instanceId);
+          }
+          for (const instanceId of usedInstanceIds) {
             try {
-              await backupManager.create(instance.instanceId, {
+              await backupManager.create(instanceId, {
                 label: 'pre-import',
                 auto: true,
               });
             } catch (err) {
-              logger.warn(MODULE, `Pre-import backup failed for ${instance.instanceId}`, err);
+              logger.warn(MODULE, `Pre-import backup failed for ${instanceId}`, err);
             }
           }
         }
 
-        // Phase 1: Install plugins (R2 — full plugin structure restoration)
-        for (const plugin of pluginList) {
-          progressIdx++;
-          if (!sender.isDestroyed()) {
-            sender.send('progress:import', {
-              current: progressIdx,
-              total: totalItems,
-              componentName: plugin.pluginName ?? plugin.pluginKey,
-              status: 'installing',
-            } satisfies ImportProgressEvent);
-          }
+        // Batch all metadata writes — saves data.json once at end instead of per-component
+        await dataStore.batch(async () => {
+          // Phase 1: Install plugins (R2 — full plugin structure restoration)
+          for (const plugin of pluginList) {
+            progressIdx++;
+            if (!sender.isDestroyed()) {
+              sender.send('progress:import', {
+                current: progressIdx,
+                total: totalItems,
+                componentName: plugin.pluginName ?? plugin.pluginKey,
+                status: 'installing',
+              } satisfies ImportProgressEvent);
+            }
 
-          // Find target tool instance (plugins are Claude Code specific for now)
-          const instance = instances.find((t) => t.toolId === 'claude-code') ?? instances[0];
-          if (!instance) {
-            // Create a synthetic portable for failure reporting
-            const synth: PortableComponent = {
-              type: 'unknown',
-              name: plugin.pluginKey,
-              core: { rawConfig: {}, rawTypeName: 'plugin' },
-            };
-            failed.push({
-              component: synth,
-              error: {
-                code: 'TOOL_NOT_FOUND',
-                message: 'No tool instance found for plugin install',
-                recoverable: true,
-              },
-            });
-            continue;
-          }
+            // Find target tool instance (plugins are Claude Code specific for now)
+            const instance = instances.find((t) => t.toolId === 'claude-code') ?? instances[0];
+            if (!instance) {
+              // Create a synthetic portable for failure reporting
+              const synth: PortableComponent = {
+                type: 'unknown',
+                name: plugin.pluginKey,
+                core: { rawConfig: {}, rawTypeName: 'plugin' },
+              };
+              failed.push({
+                component: synth,
+                error: {
+                  code: 'TOOL_NOT_FOUND',
+                  message: 'No tool instance found for plugin install',
+                  recoverable: true,
+                },
+              });
+              continue;
+            }
 
-          try {
-            const result = await withAdapterLock(instance.instanceId, async () => {
-              const adapter = registry.getAdapter(instance.instanceId);
-              if (adapter.installPlugin) {
-                return adapter.installPlugin(plugin);
+            try {
+              const result = await withAdapterLock(instance.instanceId, async () => {
+                const adapter = registry.getAdapter(instance.instanceId);
+                if (adapter.installPlugin) {
+                  // TODO: pipe scope from bundle import UI when project-scope plugin install is supported
+                  const pluginTarget: InstallTarget = {
+                    instanceId: instance.instanceId,
+                    scope: 'user',
+                  };
+                  return adapter.installPlugin(plugin, pluginTarget);
+                }
+                throw new AppError(
+                  'ADAPTER_UNSUPPORTED',
+                  `Adapter ${adapter.toolId} does not support plugin install`,
+                  false,
+                );
+              });
+
+              for (const comp of result) {
+                await dataStore.setComponentMeta(comp.id, {
+                  tracking: 'imported',
+                  displayName: comp.description,
+                });
               }
-              throw new AppError(
-                'ADAPTER_UNSUPPORTED',
-                `Adapter ${adapter.toolId} does not support plugin install`,
-                false,
-              );
-            });
+              installed.push(...result);
+            } catch (err) {
+              const synth: PortableComponent = {
+                type: 'unknown',
+                name: plugin.pluginKey,
+                core: { rawConfig: {}, rawTypeName: 'plugin' },
+              };
+              failed.push({ component: synth, error: toIpcError(err) });
+            }
+          }
 
-            for (const comp of result) {
-              await dataStore.setComponentMeta(comp.id, {
+          // Phase 2: Install standalone components (skip plugin sub-components
+          // already handled by Phase 1 to avoid redundant overwrites)
+          for (let i = 0; i < components.length; i++) {
+            let portable = components[i];
+            progressIdx++;
+
+            // Send progress
+            if (!sender.isDestroyed()) {
+              const progressEvent: ImportProgressEvent = {
+                current: progressIdx,
+                total: totalItems,
+                componentName: portable.name,
+                status: 'installing',
+              };
+              sender.send('progress:import', progressEvent);
+            }
+
+            // Defense-in-depth: the renderer pre-filters, but we check resolutions
+            // server-side as well in case the renderer logic is bypassed or buggy.
+            const resolution = resolutions.find(
+              (r) => r.componentKey.type === portable.type && r.componentKey.name === portable.name,
+            );
+
+            if (resolution?.action === 'skip') {
+              skipped.push({ component: portable, reason: 'User chose to skip' });
+              continue;
+            }
+
+            // Skip unsupported component types (e.g., plugin placeholders)
+            if (portable.type === 'unknown') {
+              skipped.push({
+                component: portable,
+                reason: 'Plugin placeholder — install the plugin via your AI tool instead',
+              });
+              continue;
+            }
+
+            // Plugin-scoped components: strip the plugin prefix from the name
+            // and force user scope. Plugin scope only works with the native plugin
+            // system (installed_plugins.json) — importing as standalone installs
+            // the component as a regular user-scope item.
+            if (portable.name.includes('/')) {
+              const leafName = portable.name.slice(portable.name.lastIndexOf('/') + 1);
+              portable = { ...portable, name: leafName };
+            }
+            if (portable.scope === 'plugin' || portable.scope?.startsWith('extension:')) {
+              portable = { ...portable, scope: 'user' };
+            }
+
+            // Find target tool instance
+            const targetTool = portable.sourceTools?.[0];
+            const instance = targetTool
+              ? instances.find((t) => t.toolId === targetTool)
+              : instances[0]; // fallback to first available
+
+            if (!instance) {
+              failed.push({
+                component: portable,
+                error: {
+                  code: 'TOOL_NOT_FOUND',
+                  message: `No tool instance found for ${targetTool ?? 'any tool'}`,
+                  recoverable: true,
+                },
+              });
+              continue;
+            }
+
+            try {
+              const target: InstallTarget = {
+                instanceId: instance.instanceId,
+                scope: resolution?.targetScope ?? portable.scope ?? 'user',
+              };
+
+              const result = await withAdapterLock(instance.instanceId, async () => {
+                const adapter = registry.getAdapter(instance.instanceId);
+                return adapter.install(portable, target);
+              });
+
+              await dataStore.setComponentMeta(result.id, {
                 tracking: 'imported',
-                displayName: comp.description,
+                displayName: portable.description,
+              });
+
+              installed.push(result);
+            } catch (err) {
+              failed.push({
+                component: portable,
+                error: toIpcError(err),
               });
             }
-            installed.push(...result);
-          } catch (err) {
-            const synth: PortableComponent = {
-              type: 'unknown',
-              name: plugin.pluginKey,
-              core: { rawConfig: {}, rawTypeName: 'plugin' },
-            };
-            failed.push({ component: synth, error: toIpcError(err) });
           }
-        }
-
-        // Phase 2: Install standalone components (existing logic)
-        for (let i = 0; i < components.length; i++) {
-          let portable = components[i];
-          progressIdx++;
-
-          // Send progress
-          if (!sender.isDestroyed()) {
-            const progressEvent: ImportProgressEvent = {
-              current: progressIdx,
-              total: totalItems,
-              componentName: portable.name,
-              status: 'installing',
-            };
-            sender.send('progress:import', progressEvent);
-          }
-
-          // Defense-in-depth: the renderer pre-filters, but we check resolutions
-          // server-side as well in case the renderer logic is bypassed or buggy.
-          const resolution = resolutions.find(
-            (r) => r.componentKey.type === portable.type && r.componentKey.name === portable.name,
-          );
-
-          if (resolution?.action === 'skip') {
-            skipped.push({ component: portable, reason: 'User chose to skip' });
-            continue;
-          }
-
-          // Skip unsupported component types (e.g., plugin placeholders)
-          if (portable.type === 'unknown') {
-            skipped.push({
-              component: portable,
-              reason: 'Plugin placeholder — install the plugin via your AI tool instead',
-            });
-            continue;
-          }
-
-          // Plugin-scoped components: strip the plugin prefix from the name
-          // and force user scope. Plugin scope only works with the native plugin
-          // system (installed_plugins.json) — importing as standalone installs
-          // the component as a regular user-scope item.
-          if (portable.name.includes('/')) {
-            const leafName = portable.name.slice(portable.name.lastIndexOf('/') + 1);
-            portable = { ...portable, name: leafName };
-          }
-          if (portable.scope === 'plugin' || portable.scope?.startsWith('extension:')) {
-            portable = { ...portable, scope: 'user' };
-          }
-
-          // Find target tool instance
-          const targetTool = portable.sourceTools?.[0];
-          const instance = targetTool
-            ? instances.find((t) => t.toolId === targetTool)
-            : instances[0]; // fallback to first available
-
-          if (!instance) {
-            failed.push({
-              component: portable,
-              error: {
-                code: 'TOOL_NOT_FOUND',
-                message: `No tool instance found for ${targetTool ?? 'any tool'}`,
-                recoverable: true,
-              },
-            });
-            continue;
-          }
-
-          try {
-            const target: InstallTarget = {
-              instanceId: instance.instanceId,
-              scope: resolution?.targetScope ?? portable.scope ?? 'user',
-            };
-
-            const result = await withAdapterLock(instance.instanceId, async () => {
-              const adapter = registry.getAdapter(instance.instanceId);
-              return adapter.install(portable, target);
-            });
-
-            await dataStore.setComponentMeta(result.id, {
-              tracking: 'imported',
-              displayName: portable.description,
-            });
-
-            installed.push(result);
-          } catch (err) {
-            failed.push({
-              component: portable,
-              error: toIpcError(err),
-            });
-          }
-        }
+        }); // end dataStore.batch
 
         // Send completion progress
         if (!sender.isDestroyed()) {
@@ -920,25 +937,6 @@ export function registerIpcHandlers(deps: HandlerDeps): void {
         return ok(source);
       } catch (err) {
         logger.error(MODULE, 'settings:addSource failed', err as Error);
-        return fail(err);
-      }
-    },
-  );
-
-  // --- settings:updateSource ---
-  ipcMain.handle(
-    'settings:updateSource',
-    async (
-      _event,
-      sourceId: string,
-      config: Partial<NewSourceConfig>,
-    ): Promise<IpcResult<MarketplaceSourceConfig>> => {
-      try {
-        logger.info(MODULE, `settings:updateSource ${sourceId}`);
-        const source = await marketplace.updateSource(sourceId, config);
-        return ok(source);
-      } catch (err) {
-        logger.error(MODULE, 'settings:updateSource failed', err as Error);
         return fail(err);
       }
     },

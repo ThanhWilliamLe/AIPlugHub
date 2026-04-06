@@ -141,14 +141,12 @@ function createMockDataStore(): DataStore {
     getComponents: vi.fn().mockResolvedValue([]),
     setComponentMeta: vi.fn().mockResolvedValue(undefined),
     removeComponentMeta: vi.fn().mockResolvedValue(undefined),
-    getPlugins: vi.fn().mockResolvedValue([]),
-    setPlugin: vi.fn().mockResolvedValue(undefined),
-    removePlugin: vi.fn().mockResolvedValue(undefined),
     getPreferences: vi.fn().mockResolvedValue({ rescanOnLaunch: true, setupComplete: false }),
     setPreferences: vi.fn().mockResolvedValue(undefined),
     getToolInstances: vi.fn().mockResolvedValue([]),
     setToolInstance: vi.fn().mockResolvedValue(undefined),
     removeToolInstance: vi.fn().mockResolvedValue(undefined),
+    batch: vi.fn(async (fn: () => Promise<void>) => fn()),
   };
 }
 
@@ -191,7 +189,7 @@ function makeDeps(overrides?: Partial<HandlerDeps>): HandlerDeps {
       refreshSources: vi.fn().mockResolvedValue(undefined),
       getSources: vi.fn().mockResolvedValue([]),
       addSource: vi.fn().mockResolvedValue({}),
-      updateSource: vi.fn().mockResolvedValue({}),
+
       removeSource: vi.fn().mockResolvedValue(undefined),
       init: vi.fn().mockResolvedValue(undefined),
     } as unknown as HandlerDeps['marketplace'],
@@ -529,7 +527,6 @@ describe('Input validation — URL scheme injection for source URLs', () => {
       addSource: vi
         .fn()
         .mockResolvedValue({ id: 'new', url: 'https://ok.example.com', name: 'OK', enabled: true }),
-      updateSource: vi.fn(),
       removeSource: vi.fn(),
       init: vi.fn().mockResolvedValue(undefined),
     };
@@ -723,7 +720,6 @@ describe('Secret handling — GitHub token isolation from DataStore', () => {
     const allDataStoreArgs = [
       ...(mockDataStore.setPreferences as ReturnType<typeof vi.fn>).mock.calls,
       ...(mockDataStore.setComponentMeta as ReturnType<typeof vi.fn>).mock.calls,
-      ...(mockDataStore.setPlugin as ReturnType<typeof vi.fn>).mock.calls,
       ...(mockDataStore.setToolInstance as ReturnType<typeof vi.fn>).mock.calls,
     ].flat();
 

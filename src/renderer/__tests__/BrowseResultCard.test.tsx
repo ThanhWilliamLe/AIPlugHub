@@ -87,9 +87,9 @@ describe('BrowseResultCard', () => {
   });
 
   it('renders multiple tool badges', () => {
-    const entry = { ...MOCK_ENTRY, tools: ['claude-code' as const, 'gemini-cli' as const] };
+    const entry = { ...MOCK_ENTRY, tools: ['claude-code' as const, 'claude-desktop' as const] };
     render(<BrowseResultCard entry={entry} selected={false} onSelect={vi.fn()} />);
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
-    expect(screen.getByText('Gemini CLI')).toBeInTheDocument();
+    expect(screen.getByText('Claude Desktop')).toBeInTheDocument();
   });
 });

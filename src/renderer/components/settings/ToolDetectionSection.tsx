@@ -6,7 +6,7 @@
 
 import { useState, useCallback } from 'react';
 import { useToolStore } from '@renderer/stores/tool-store';
-import { TOOL_META, ALL_TOOL_IDS } from '@shared/constants';
+import { TOOL_META, ENABLED_TOOL_IDS } from '@shared/constants';
 import { Button } from '@renderer/components/ui/button';
 import { cn } from '@renderer/lib/utils';
 
@@ -14,7 +14,7 @@ function ToolRow({
   toolId,
   tools,
 }: {
-  toolId: (typeof ALL_TOOL_IDS)[number];
+  toolId: (typeof ENABLED_TOOL_IDS)[number];
   tools: ReturnType<typeof useToolStore>['tools'];
 }) {
   const meta = TOOL_META[toolId];
@@ -67,11 +67,11 @@ export function ToolDetectionSection() {
     }
   }, [detectTools, scanAll]);
 
-  const detectedToolIds = ALL_TOOL_IDS.filter((toolId) => {
+  const detectedToolIds = ENABLED_TOOL_IDS.filter((toolId) => {
     const tool = tools.find((t) => t.toolId === toolId);
     return tool?.detected ?? false;
   });
-  const undetectedToolIds = ALL_TOOL_IDS.filter((toolId) => {
+  const undetectedToolIds = ENABLED_TOOL_IDS.filter((toolId) => {
     const tool = tools.find((t) => t.toolId === toolId);
     return !(tool?.detected ?? false);
   });

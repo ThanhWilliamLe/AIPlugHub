@@ -37,7 +37,7 @@ export interface ToolAdapter {
   scanProject?(projectPath: string): Promise<Component[]>;
 
   /** Install a full plugin with sub-components, registry entry, and enabled state (v1.7.0) */
-  installPlugin?(plugin: PortablePlugin): Promise<Component[]>;
+  installPlugin?(plugin: PortablePlugin, target?: InstallTarget): Promise<Component[]>;
 
   /** Cache/temp patterns to exclude when skipCaches is true (FEAT-02) */
   getCachePatterns(): string[];

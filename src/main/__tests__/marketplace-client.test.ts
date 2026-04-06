@@ -10,6 +10,22 @@ import {
 } from '../marketplace/marketplace-source';
 import type { GitMarketplaceManifest, UrlIndexManifest, MarketplaceEntry } from '@shared/types';
 
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(null, '', '');
+      },
+    ),
+  };
+});
+
+vi.mock('../adapters/cli-exec', () => ({
+  execCli: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+}));
+
 // ─── Cache Tests ─────────────────────────────────────────────────────
 
 describe('MarketplaceCache', () => {
@@ -198,11 +214,14 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('throws on invalid GitHub URL', () => {
-    expect(() => new GitMarketplaceSource({
-      sourceId: 'test',
-      displayName: 'Test',
-      url: 'https://example.com/not-github',
-    })).toThrow(/invalid github url/i);
+    expect(
+      () =>
+        new GitMarketplaceSource({
+          sourceId: 'test',
+          displayName: 'Test',
+          url: 'https://example.com/not-github',
+        }),
+    ).toThrow(/invalid github url/i);
   });
 
   it('constructs with .git suffix in URL', () => {
@@ -257,9 +276,9 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('returns empty array on 304 Not Modified', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 304 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 304 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -274,9 +293,9 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('throws on fetch failure', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Not found', { status: 404, statusText: 'Not Found' }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('Not found', { status: 404, statusText: 'Not Found' }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -290,9 +309,9 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('throws on network-level error (fetch rejects)', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
-      new TypeError('Failed to fetch'),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new TypeError('Failed to fetch'));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -313,9 +332,9 @@ describe('GitMarketplaceSource', () => {
       })),
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(bigManifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(bigManifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -348,9 +367,9 @@ describe('GitMarketplaceSource', () => {
   it('throws when response body text exceeds max manifest size', async () => {
     const bigText = 'x'.repeat(MAX_MANIFEST_SIZE + 1);
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(bigText, { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(bigText, { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -363,9 +382,9 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('throws on invalid JSON in manifest', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('not-json{{{', { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('not-json{{{', { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -397,9 +416,9 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('sends If-None-Match header when etag option is provided', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 304 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 304 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -415,9 +434,11 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('sends Authorization header when githubToken is configured', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
+      );
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -430,15 +451,17 @@ describe('GitMarketplaceSource', () => {
 
     const [, init] = fetchSpy.mock.calls[0];
     expect((init as RequestInit).headers).toMatchObject({
-      'Authorization': 'Bearer ghp_testtoken',
+      Authorization: 'Bearer ghp_testtoken',
     });
     fetchSpy.mockRestore();
   });
 
   it('does not send Authorization header when no token configured', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
+      );
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -450,16 +473,16 @@ describe('GitMarketplaceSource', () => {
 
     const [, init] = fetchSpy.mock.calls[0];
     expect((init as RequestInit).headers).not.toMatchObject({
-      'Authorization': expect.anything(),
+      Authorization: expect.anything(),
     });
     fetchSpy.mockRestore();
   });
 
   it('handles manifest with missing plugins array gracefully', async () => {
     const manifestNoPlugins = { name: 'empty-marketplace' };
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifestNoPlugins), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifestNoPlugins), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -473,9 +496,11 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('fetches correct raw GitHub URL for manifest', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ...MOCK_MANIFEST, plugins: [] }), { status: 200 }),
+      );
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -494,16 +519,18 @@ describe('GitMarketplaceSource', () => {
   it('sanitizes entries with overly long name fields', async () => {
     const longNameManifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'x'.repeat(200),
-        source: './plug',
-        description: 'short desc',
-      }],
+      plugins: [
+        {
+          name: 'x'.repeat(200),
+          source: './plug',
+          description: 'short desc',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(longNameManifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(longNameManifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -519,16 +546,18 @@ describe('GitMarketplaceSource', () => {
   it('sanitizes entries with overly long description fields', async () => {
     const longDescManifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'my-plugin',
-        source: './plug',
-        description: 'd'.repeat(600),
-      }],
+      plugins: [
+        {
+          name: 'my-plugin',
+          source: './plug',
+          description: 'd'.repeat(600),
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(longDescManifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(longDescManifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -544,19 +573,21 @@ describe('GitMarketplaceSource', () => {
   it('maps all optional entry fields correctly', async () => {
     const manifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'full-plugin',
-        source: './full-plugin',
-        description: 'Full featured plugin',
-        keywords: ['kw1', 'kw2'],
-        version: '2.3.4',
-        author: 'Jane Doe',
-      }],
+      plugins: [
+        {
+          name: 'full-plugin',
+          source: './full-plugin',
+          description: 'Full featured plugin',
+          keywords: ['kw1', 'kw2'],
+          version: '2.3.4',
+          author: 'Jane Doe',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -583,14 +614,20 @@ describe('GitMarketplaceSource', () => {
     const manifest: GitMarketplaceManifest = {
       name: 'test',
       metadata: { pluginRoot: './plugins' },
-      plugins: [{
-        name: 'my-plugin',
-        source: './my-plugin',
-        description: 'My plugin',
-      }],
+      plugins: [
+        {
+          name: 'my-plugin',
+          source: './my-plugin',
+          description: 'My plugin',
+        },
+      ],
     };
 
-    const pluginJson = { components: [{ type: 'skill', name: 'my-skill', content: 'do stuff', core: { content: 'do stuff' } }] };
+    const pluginJson = {
+      components: [
+        { type: 'skill', name: 'my-skill', content: 'do stuff', core: { content: 'do stuff' } },
+      ],
+    };
 
     let callCount = 0;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
@@ -622,11 +659,13 @@ describe('GitMarketplaceSource', () => {
   it('getDetail returns detail for a remote-source plugin', async () => {
     const manifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'remote-plug',
-        source: { source: 'github', repo: 'user/remote-plug' },
-        description: 'Remote plugin',
-      }],
+      plugins: [
+        {
+          name: 'remote-plug',
+          source: { source: 'github', repo: 'user/remote-plug' },
+          description: 'Remote plugin',
+        },
+      ],
     };
 
     const pluginJson = { components: [] };
@@ -656,9 +695,9 @@ describe('GitMarketplaceSource', () => {
       plugins: [{ name: 'other-plugin', source: './other' }],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -671,9 +710,11 @@ describe('GitMarketplaceSource', () => {
   });
 
   it('getDetail throws when manifest fetch fails', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Server Error', { status: 500, statusText: 'Internal Server Error' }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response('Server Error', { status: 500, statusText: 'Internal Server Error' }),
+      );
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -785,7 +826,7 @@ describe('GitMarketplaceSource', () => {
 
     // Both manifest and plugin.json calls should include Authorization
     for (const [, init] of fetchSpy.mock.calls) {
-      expect((init as RequestInit).headers).toMatchObject({ 'Authorization': 'Bearer ghp_secret' });
+      expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer ghp_secret' });
     }
     fetchSpy.mockRestore();
   });
@@ -793,16 +834,18 @@ describe('GitMarketplaceSource', () => {
   it('resolvePluginUrl returns undefined for path traversal repo', async () => {
     const manifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'evil-plugin',
-        source: { source: 'github', repo: 'user/../../../etc/passwd' },
-        description: 'Evil plugin',
-      }],
+      plugins: [
+        {
+          name: 'evil-plugin',
+          source: { source: 'github', repo: 'user/../../../etc/passwd' },
+          description: 'Evil plugin',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -819,16 +862,18 @@ describe('GitMarketplaceSource', () => {
   it('resolvePluginUrl returns undefined for source with path traversal', async () => {
     const manifest: GitMarketplaceManifest = {
       name: 'test',
-      plugins: [{
-        name: 'traversal-plugin',
-        source: '../../etc/passwd',
-        description: 'Traversal plugin',
-      }],
+      plugins: [
+        {
+          name: 'traversal-plugin',
+          source: '../../etc/passwd',
+          description: 'Traversal plugin',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const source = new GitMarketplaceSource({
       sourceId: 'test',
@@ -924,9 +969,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('returns empty array on 304', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 304 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 304 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -941,9 +986,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('throws on HTTP error', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Error', { status: 500, statusText: 'Server Error' }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('Error', { status: 500, statusText: 'Server Error' }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -957,9 +1002,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('throws on network-level error', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
-      new TypeError('Network failure'),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new TypeError('Network failure'));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -972,9 +1017,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('throws on invalid JSON response body', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('not-json<<<', { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('not-json<<<', { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1006,9 +1051,9 @@ describe('UrlIndexSource', () => {
 
   it('throws when response body text exceeds max manifest size', async () => {
     const bigText = 'y'.repeat(MAX_MANIFEST_SIZE + 1);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(bigText, { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(bigText, { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1030,9 +1075,9 @@ describe('UrlIndexSource', () => {
       })),
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(bigIndex), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(bigIndex), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1064,9 +1109,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('sends If-None-Match header when etag option provided', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 304 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 304 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1082,9 +1127,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('does not send If-None-Match when no etag option provided', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ name: 'x', plugins: [] }), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ name: 'x', plugins: [] }), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1102,9 +1147,9 @@ describe('UrlIndexSource', () => {
 
   it('handles missing plugins array in index gracefully', async () => {
     const indexNoPlugins = { name: 'empty' };
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(indexNoPlugins), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(indexNoPlugins), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1120,16 +1165,18 @@ describe('UrlIndexSource', () => {
   it('uses claude-code as default tool when plugin has no tools field', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'no-tools-plugin',
-        description: 'desc',
-        url: 'https://github.com/team/x',
-      }],
+      plugins: [
+        {
+          name: 'no-tools-plugin',
+          description: 'desc',
+          url: 'https://github.com/team/x',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1145,22 +1192,24 @@ describe('UrlIndexSource', () => {
   it('maps all optional fields correctly', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'full-plugin',
-        description: 'Full desc',
-        url: 'https://github.com/team/full-plugin',
-        version: '3.2.1',
-        components: { skill: 3 },
-        tools: ['claude-code'],
-        author: 'Bob',
-        keywords: ['kw'],
-        lastUpdated: '2025-01-01T00:00:00Z',
-      }],
+      plugins: [
+        {
+          name: 'full-plugin',
+          description: 'Full desc',
+          url: 'https://github.com/team/full-plugin',
+          version: '3.2.1',
+          components: { skill: 3 },
+          tools: ['claude-code'],
+          author: 'Bob',
+          keywords: ['kw'],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1186,16 +1235,18 @@ describe('UrlIndexSource', () => {
   it('sanitizes entries with long name fields', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'n'.repeat(200),
-        description: 'desc',
-        url: 'https://github.com/team/x',
-      }],
+      plugins: [
+        {
+          name: 'n'.repeat(200),
+          description: 'desc',
+          url: 'https://github.com/team/x',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1211,16 +1262,18 @@ describe('UrlIndexSource', () => {
   it('sanitizes entries with long description fields', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'plugin',
-        description: 'd'.repeat(600),
-        url: 'https://github.com/team/x',
-      }],
+      plugins: [
+        {
+          name: 'plugin',
+          description: 'd'.repeat(600),
+          url: 'https://github.com/team/x',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1258,9 +1311,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('getDetail throws when plugin not found in index', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(MOCK_INDEX), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(MOCK_INDEX), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1273,9 +1326,9 @@ describe('UrlIndexSource', () => {
   });
 
   it('getDetail throws when index fetch fails', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Bad Gateway', { status: 502, statusText: 'Bad Gateway' }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('Bad Gateway', { status: 502, statusText: 'Bad Gateway' }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1290,11 +1343,13 @@ describe('UrlIndexSource', () => {
   it('getDetail fetches plugin.json from GitHub raw URL when url is a GitHub repo', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'gh-plugin',
-        description: 'GitHub hosted',
-        url: 'https://github.com/org/myplugin',
-      }],
+      plugins: [
+        {
+          name: 'gh-plugin',
+          description: 'GitHub hosted',
+          url: 'https://github.com/org/myplugin',
+        },
+      ],
     };
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
@@ -1316,8 +1371,8 @@ describe('UrlIndexSource', () => {
     expect(detail.components).toHaveLength(1);
 
     // Verify plugin.json was fetched from raw.githubusercontent.com
-    const pluginJsonCall = fetchSpy.mock.calls.find(([url]) =>
-      typeof url === 'string' && url.includes('raw.githubusercontent.com'),
+    const pluginJsonCall = fetchSpy.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('raw.githubusercontent.com'),
     );
     expect(pluginJsonCall).toBeDefined();
     fetchSpy.mockRestore();
@@ -1326,16 +1381,18 @@ describe('UrlIndexSource', () => {
   it('getDetail returns empty components when plugin url is not a GitHub repo', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'non-gh-plugin',
-        description: 'Not on GitHub',
-        url: 'https://gitlab.com/org/plugin',
-      }],
+      plugins: [
+        {
+          name: 'non-gh-plugin',
+          description: 'Not on GitHub',
+          url: 'https://gitlab.com/org/plugin',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1351,16 +1408,18 @@ describe('UrlIndexSource', () => {
   it('getDetail sets repository and homepage to undefined when plugin url is not https', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'http-plugin',
-        description: 'HTTP only',
-        url: 'http://insecure.example.com/plugin',
-      }],
+      plugins: [
+        {
+          name: 'http-plugin',
+          description: 'HTTP only',
+          url: 'http://insecure.example.com/plugin',
+        },
+      ],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(index), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(index), { status: 200 }));
 
     const source = new UrlIndexSource({
       sourceId: 'team',
@@ -1377,11 +1436,13 @@ describe('UrlIndexSource', () => {
   it('getDetail returns empty components when plugin.json fetch throws', async () => {
     const index: UrlIndexManifest = {
       name: 'test',
-      plugins: [{
-        name: 'gh-plugin',
-        description: 'GitHub hosted',
-        url: 'https://github.com/org/myplugin',
-      }],
+      plugins: [
+        {
+          name: 'gh-plugin',
+          description: 'GitHub hosted',
+          url: 'https://github.com/org/myplugin',
+        },
+      ],
     };
 
     let callCount = 0;
@@ -1409,11 +1470,13 @@ describe('UrlIndexSource', () => {
 /**
  * Helper: build a minimal mock DataStore
  */
-function makeMockDataStore(overrides: Partial<{
-  getPreferences: () => Promise<Record<string, unknown>>;
-  setPreferences: (prefs: Record<string, unknown>) => Promise<void>;
-  setComponentMeta: (id: string, meta: unknown) => Promise<void>;
-}> = {}) {
+function makeMockDataStore(
+  overrides: Partial<{
+    getPreferences: () => Promise<Record<string, unknown>>;
+    setPreferences: (prefs: Record<string, unknown>) => Promise<void>;
+    setComponentMeta: (id: string, meta: unknown) => Promise<void>;
+  }> = {},
+) {
   return {
     getPreferences: vi.fn().mockResolvedValue({ marketplaceSources: [] }),
     setPreferences: vi.fn().mockResolvedValue(undefined),
@@ -1427,9 +1490,11 @@ function makeMockDataStore(overrides: Partial<{
  */
 function makeMockSecretStore(token: string | null = null) {
   return {
-    get: vi.fn().mockImplementation((_service: string, _key: string) =>
-      token ? Promise.resolve(token) : Promise.reject(new Error('No token')),
-    ),
+    get: vi
+      .fn()
+      .mockImplementation((_service: string, _key: string) =>
+        token ? Promise.resolve(token) : Promise.reject(new Error('No token')),
+      ),
   };
 }
 
@@ -1459,13 +1524,15 @@ function makeMockLogger() {
 /**
  * Helper: build a MarketplaceClient wired to in-memory mocks and a temp cache dir.
  */
-function makeClient(overrides: {
-  dataStore?: ReturnType<typeof makeMockDataStore>;
-  secretStore?: ReturnType<typeof makeMockSecretStore>;
-  registry?: ReturnType<typeof makeMockRegistry>;
-  logger?: ReturnType<typeof makeMockLogger>;
-  claudeRootPath?: string;
-} = {}) {
+function makeClient(
+  overrides: {
+    dataStore?: ReturnType<typeof makeMockDataStore>;
+    secretStore?: ReturnType<typeof makeMockSecretStore>;
+    registry?: ReturnType<typeof makeMockRegistry>;
+    logger?: ReturnType<typeof makeMockLogger>;
+    claudeRootPath?: string;
+  } = {},
+) {
   const tmpDir = '/tmp/plughub-client-test-' + Date.now() + '-' + Math.random();
   return new MarketplaceClient({
     cachePath: tmpDir,
@@ -1504,7 +1571,7 @@ describe('MarketplaceClient', () => {
     expect(sources[0].isBuiltIn).toBe(true);
   });
 
-  it('getSources includes stored custom sources', async () => {
+  it('getSources does not include custom sources from DataStore (CLI-managed only)', async () => {
     const customSource = {
       sourceId: 'custom-111',
       sourceType: 'url-index' as const,
@@ -1518,8 +1585,9 @@ describe('MarketplaceClient', () => {
 
     const client = makeClient({ dataStore });
     const sources = await client.getSources();
-    expect(sources).toHaveLength(2);
-    expect(sources[1].sourceId).toBe('custom-111');
+    // Custom sources no longer come from DataStore — only native/built-in sources
+    expect(sources).toHaveLength(1);
+    expect(sources[0].sourceId).toBe('claude-plugins-official');
   });
 
   it('getSources falls back to built-in only when dataStore throws', async () => {
@@ -1533,13 +1601,13 @@ describe('MarketplaceClient', () => {
   });
 
   it('init is idempotent — called twice does not double-load sources', async () => {
-    const dataStore = makeMockDataStore();
-    const client = makeClient({ dataStore });
+    const client = makeClient();
 
-    await client.getSources(); // triggers init
-    await client.getSources(); // should not re-init
+    const sources1 = await client.getSources(); // triggers init
+    const sources2 = await client.getSources(); // should not re-init
 
-    expect(dataStore.getPreferences).toHaveBeenCalledTimes(1);
+    // Both calls return the same sources (init only runs once)
+    expect(sources1).toEqual(sources2);
   });
 
   // ─── getEntries() ─────────────────────────────────────────────────
@@ -1548,11 +1616,13 @@ describe('MarketplaceClient', () => {
     const officialEntry = makeEntry({ sourceId: 'claude-plugins-official' });
     const officialManifest: GitMarketplaceManifest = {
       name: 'official',
-      plugins: [{
-        name: officialEntry.name,
-        source: './test-plugin',
-        description: officialEntry.description,
-      }],
+      plugins: [
+        {
+          name: officialEntry.name,
+          source: './test-plugin',
+          description: officialEntry.description,
+        },
+      ],
     };
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -1587,9 +1657,9 @@ describe('MarketplaceClient', () => {
       plugins: [{ name: 'cached-plugin', source: './cached', description: 'Cached' }],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const client = makeClient();
     await client.getEntries(); // first call populates cache
@@ -1654,7 +1724,10 @@ describe('MarketplaceClient', () => {
     });
 
     const client = makeClient();
-    const detail = await client.getDetail({ sourceId: 'claude-plugins-official', ref: 'detail-plugin' });
+    const detail = await client.getDetail({
+      sourceId: 'claude-plugins-official',
+      ref: 'detail-plugin',
+    });
 
     expect(detail.entry.name).toBe('detail-plugin');
   });
@@ -1694,7 +1767,12 @@ describe('MarketplaceClient', () => {
   // ─── install() ────────────────────────────────────────────────────
 
   it('install calls adapter.install with component and returns result', async () => {
-    const component = { type: 'skill' as const, name: 'my-skill', content: 'do stuff', core: { content: 'do stuff' } };
+    const component = {
+      type: 'skill' as const,
+      name: 'my-skill',
+      content: 'do stuff',
+      core: { content: 'do stuff' },
+    };
     const manifest: GitMarketplaceManifest = {
       name: 'official',
       plugins: [{ name: 'install-plugin', source: './install', description: 'Install me' }],
@@ -1746,8 +1824,18 @@ describe('MarketplaceClient', () => {
 
   it('install installs multiple components and returns the last one', async () => {
     const components = [
-      { type: 'skill' as const, name: 'skill-1', content: 'do stuff 1', core: { content: 'do stuff 1' } },
-      { type: 'hook' as const, name: 'hook-1', content: 'do stuff 2', core: { content: 'do stuff 2' } },
+      {
+        type: 'skill' as const,
+        name: 'skill-1',
+        content: 'do stuff 1',
+        core: { content: 'do stuff 1' },
+      },
+      {
+        type: 'hook' as const,
+        name: 'hook-1',
+        content: 'do stuff 2',
+        core: { content: 'do stuff 2' },
+      },
     ];
 
     const manifest: GitMarketplaceManifest = {
@@ -1791,9 +1879,9 @@ describe('MarketplaceClient', () => {
       plugins: [{ name: 'refreshable', source: './refresh', description: 'Refresh me' }],
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const client = makeClient();
 
@@ -1811,18 +1899,27 @@ describe('MarketplaceClient', () => {
 
   // ─── addSource() ──────────────────────────────────────────────────
 
-  it('addSource adds a new url-index source and persists it', async () => {
-    const newIndex: UrlIndexManifest = {
-      name: 'New Source',
-      plugins: [],
+  it('addSource delegates to CLI and returns config', async () => {
+    const { execCli } = await import('../adapters/cli-exec');
+
+    const client = makeClient();
+
+    // After CLI call, loadSourceConfigs is called internally to read back the new source.
+    // Mock it to return the added source so the find-by-URL succeeds.
+    const newSourceConfig = {
+      sourceId: 'custom-new',
+      sourceType: 'url-index' as const,
+      url: 'https://new.example.com/plugins.json',
+      displayName: 'New Source',
+      isBuiltIn: false,
     };
-
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
-    const dataStore = makeMockDataStore();
-    const client = makeClient({ dataStore });
+    let callCount = 0;
+    vi.spyOn(client as any, 'loadSourceConfigs').mockImplementation(async () => {
+      callCount++;
+      // First call is during init(), return builtin only; second call is after CLI add
+      if (callCount <= 1) return [{ sourceId: 'claude-plugins-official', sourceType: 'git-marketplace', url: 'https://github.com/anthropics/claude-plugins-official', displayName: 'Claude Plugins Official', isBuiltIn: true }];
+      return [{ sourceId: 'claude-plugins-official', sourceType: 'git-marketplace', url: 'https://github.com/anthropics/claude-plugins-official', displayName: 'Claude Plugins Official', isBuiltIn: true }, newSourceConfig];
+    });
 
     const added = await client.addSource({
       sourceType: 'url-index',
@@ -1830,20 +1927,35 @@ describe('MarketplaceClient', () => {
       displayName: 'New Source',
     });
 
+    expect(execCli).toHaveBeenCalledWith('claude', [
+      'plugins',
+      'marketplace',
+      'add',
+      'https://new.example.com/plugins.json',
+    ]);
     expect(added.sourceType).toBe('url-index');
     expect(added.url).toBe('https://new.example.com/plugins.json');
-    expect(added.isBuiltIn).toBe(false);
-    expect(dataStore.setPreferences).toHaveBeenCalled();
   });
 
   it('addSource uses url as displayName when not provided', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
     const client = makeClient();
+
+    // Mock loadSourceConfigs to return the added source with url as displayName
+    const newSourceConfig = {
+      sourceId: 'custom-auto',
+      sourceType: 'url-index' as const,
+      url: 'https://auto.example.com/plugins.json',
+      displayName: 'https://auto.example.com/plugins.json',
+      isBuiltIn: false,
+    };
+    let callCount = 0;
+    vi.spyOn(client as any, 'loadSourceConfigs').mockImplementation(async () => {
+      callCount++;
+      const builtin = { sourceId: 'claude-plugins-official', sourceType: 'git-marketplace', url: 'https://github.com/anthropics/claude-plugins-official', displayName: 'Claude Plugins Official', isBuiltIn: true };
+      if (callCount <= 1) return [builtin];
+      return [builtin, newSourceConfig];
+    });
+
     const added = await client.addSource({
       sourceType: 'url-index',
       url: 'https://auto.example.com/plugins.json',
@@ -1864,33 +1976,21 @@ describe('MarketplaceClient', () => {
     ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
-  it('addSource throws VALIDATION_ERROR for duplicate URL', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
+  it('addSource throws VALIDATION_ERROR for duplicate URL matching existing source', async () => {
     const client = makeClient();
 
-    // Add once
-    await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://unique.example.com/plugins.json',
-    });
-
-    // Try to add same URL again
+    // Try to add the built-in source URL — should be caught as duplicate
     await expect(
       client.addSource({
-        sourceType: 'url-index',
-        url: 'https://unique.example.com/plugins.json',
+        sourceType: 'git-marketplace',
+        url: 'https://github.com/anthropics/claude-plugins-official',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
-  it('addSource throws when source validation fetch fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Not Found', { status: 404, statusText: 'Not Found' }),
-    );
+  it('addSource throws when CLI command fails', async () => {
+    const { execCli } = await import('../adapters/cli-exec');
+    vi.mocked(execCli).mockRejectedValueOnce(new Error('CLI failed: source not reachable'));
 
     const client = makeClient();
 
@@ -1903,12 +2003,24 @@ describe('MarketplaceClient', () => {
   });
 
   it('addSource assigns a unique sourceId with custom- prefix', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
     const client = makeClient();
+
+    // Mock loadSourceConfigs to return the added source with custom- prefix sourceId
+    const newSourceConfig = {
+      sourceId: 'custom-abc123',
+      sourceType: 'url-index' as const,
+      url: 'https://new.example.com/idx.json',
+      displayName: 'https://new.example.com/idx.json',
+      isBuiltIn: false,
+    };
+    let callCount = 0;
+    vi.spyOn(client as any, 'loadSourceConfigs').mockImplementation(async () => {
+      callCount++;
+      const builtin = { sourceId: 'claude-plugins-official', sourceType: 'git-marketplace', url: 'https://github.com/anthropics/claude-plugins-official', displayName: 'Claude Plugins Official', isBuiltIn: true };
+      if (callCount <= 1) return [builtin];
+      return [builtin, newSourceConfig];
+    });
+
     const added = await client.addSource({
       sourceType: 'url-index',
       url: 'https://new.example.com/idx.json',
@@ -1917,96 +2029,22 @@ describe('MarketplaceClient', () => {
     expect(added.sourceId).toMatch(/^custom-/);
   });
 
-  // ─── updateSource() ───────────────────────────────────────────────
-
-  it('updateSource changes displayName of a custom source', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
-    const client = makeClient();
-    const added = await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://update.example.com/plugins.json',
-      displayName: 'Old Name',
-    });
-
-    const updated = await client.updateSource(added.sourceId, { displayName: 'New Name' });
-    expect(updated.displayName).toBe('New Name');
-  });
-
-  it('updateSource throws SOURCE_NOT_FOUND for unknown sourceId', async () => {
-    const client = makeClient();
-
-    await expect(
-      client.updateSource('nonexistent', { displayName: 'x' }),
-    ).rejects.toMatchObject({ code: 'SOURCE_NOT_FOUND' });
-  });
-
-  it('updateSource throws VALIDATION_ERROR when modifying built-in source', async () => {
-    const client = makeClient();
-
-    await expect(
-      client.updateSource('claude-plugins-official', { displayName: 'Renamed' }),
-    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-  });
-
-  it('updateSource throws VALIDATION_ERROR when new URL is not HTTPS', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
-    const client = makeClient();
-    const added = await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://update.example.com/plugins.json',
-    });
-
-    await expect(
-      client.updateSource(added.sourceId, { url: 'http://insecure.example.com/plugins.json' }),
-    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-  });
-
-  it('updateSource persists changes to dataStore', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
-
-    const dataStore = makeMockDataStore();
-    const client = makeClient({ dataStore });
-
-    const added = await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://persist.example.com/plugins.json',
-    });
-
-    await client.updateSource(added.sourceId, { displayName: 'Persisted Name' });
-
-    // setPreferences called once for addSource, once for updateSource
-    expect(dataStore.setPreferences).toHaveBeenCalledTimes(2);
-  });
-
   // ─── removeSource() ───────────────────────────────────────────────
 
-  it('removeSource removes a custom source', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
+  it('removeSource delegates to CLI for a known source', async () => {
+    const { execCli } = await import('../adapters/cli-exec');
 
     const client = makeClient();
-    const added = await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://remove.example.com/plugins.json',
-    });
+    await client.getSources(); // triggers init
 
-    await client.removeSource(added.sourceId);
+    await client.removeSource('claude-plugins-official');
 
-    const sources = await client.getSources();
-    expect(sources.find((s) => s.sourceId === added.sourceId)).toBeUndefined();
+    expect(execCli).toHaveBeenCalledWith('claude', [
+      'plugins',
+      'marketplace',
+      'remove',
+      'claude-plugins-official',
+    ]);
   });
 
   it('removeSource throws SOURCE_NOT_FOUND for unknown sourceId', async () => {
@@ -2018,32 +2056,34 @@ describe('MarketplaceClient', () => {
   });
 
   it('removeSource removes built-in source without error', async () => {
+    const { execCli } = await import('../adapters/cli-exec');
+
     const client = makeClient();
-    // Built-in sources can now be removed — no longer throws VALIDATION_ERROR
-    await client.removeSource('claude-plugins-official');
-    const entries = await client.getEntries();
-    // Source should be gone from the client
-    expect(entries.every((e) => e.sourceId !== 'claude-plugins-official')).toBe(true);
+    // Built-in sources can now be removed — delegates to CLI, no VALIDATION_ERROR
+    await expect(client.removeSource('claude-plugins-official')).resolves.toBeUndefined();
+    expect(execCli).toHaveBeenCalledWith('claude', [
+      'plugins',
+      'marketplace',
+      'remove',
+      'claude-plugins-official',
+    ]);
   });
 
-  it('removeSource persists changes and invalidates cache', async () => {
-    const newIndex: UrlIndexManifest = { name: 'x', plugins: [] };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(newIndex), { status: 200 }),
-    );
+  it('removeSource delegates to CLI and invalidates cache', async () => {
+    const { execCli } = await import('../adapters/cli-exec');
 
-    const dataStore = makeMockDataStore();
-    const client = makeClient({ dataStore });
+    const client = makeClient();
+    await client.getSources(); // triggers init
 
-    const added = await client.addSource({
-      sourceType: 'url-index',
-      url: 'https://cache-remove.example.com/plugins.json',
-    });
+    await client.removeSource('claude-plugins-official');
 
-    await client.removeSource(added.sourceId);
-
-    // setPreferences called once for add, once for remove
-    expect(dataStore.setPreferences).toHaveBeenCalledTimes(2);
+    // CLI was called to remove the source
+    expect(execCli).toHaveBeenCalledWith('claude', [
+      'plugins',
+      'marketplace',
+      'remove',
+      'claude-plugins-official',
+    ]);
   });
 
   // ─── GitHub token injection ────────────────────────────────────────
@@ -2052,17 +2092,19 @@ describe('MarketplaceClient', () => {
     const secretStore = makeMockSecretStore('ghp_secret_token');
     const manifest: GitMarketplaceManifest = { name: 'official', plugins: [] };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const client = makeClient({ secretStore });
     await client.getEntries();
 
     // At least one fetch call should have the Authorization header
-    const authCall = fetchSpy.mock.calls.find(([, init]) =>
-      (init as RequestInit)?.headers &&
-      ((init as RequestInit).headers as Record<string, string>)['Authorization'] === 'Bearer ghp_secret_token',
+    const authCall = fetchSpy.mock.calls.find(
+      ([, init]) =>
+        (init as RequestInit)?.headers &&
+        ((init as RequestInit).headers as Record<string, string>)['Authorization'] ===
+          'Bearer ghp_secret_token',
     );
     expect(authCall).toBeDefined();
   });
@@ -2071,9 +2113,9 @@ describe('MarketplaceClient', () => {
     const secretStore = makeMockSecretStore(null); // throws
     const manifest: GitMarketplaceManifest = { name: 'official', plugins: [] };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(manifest), { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
 
     const client = makeClient({ secretStore });
     // Should not throw — token is optional
@@ -2085,7 +2127,7 @@ describe('MarketplaceClient', () => {
   it('BUILTIN_SOURCE has correct URL pointing to claude-plugins-official', async () => {
     const client = makeClient();
     const sources = await client.getSources();
-    const builtin = sources.find(s => s.isBuiltIn);
+    const builtin = sources.find((s) => s.isBuiltIn);
     expect(builtin).toBeDefined();
     expect(builtin!.url).toBe('https://github.com/anthropics/claude-plugins-official');
     expect(builtin!.sourceId).toBe('claude-plugins-official');
@@ -2126,12 +2168,12 @@ describe('MarketplaceClient', () => {
     const sources = await client.getSources();
 
     // Should have 2 native sources (actual IDs, no prefix), no BUILTIN_SOURCE
-    expect(sources.some(s => s.sourceId === 'official-plugins')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'community-plugins')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(false);
+    expect(sources.some((s) => s.sourceId === 'official-plugins')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'community-plugins')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'claude-plugins-official')).toBe(false);
 
     // Check URL construction
-    const officialSrc = sources.find(s => s.sourceId === 'official-plugins')!;
+    const officialSrc = sources.find((s) => s.sourceId === 'official-plugins')!;
     expect(officialSrc.url).toBe('https://github.com/anthropics/claude-plugins-official');
     expect(officialSrc.isBuiltIn).toBe(true);
     expect(officialSrc.displayName).toBe('Official Plugins');
@@ -2148,7 +2190,7 @@ describe('MarketplaceClient', () => {
 
     const client = makeClient();
     const sources = await client.getSources();
-    expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'claude-plugins-official')).toBe(true);
   });
 
   it('loadNativeMarketplaceSources handles missing file gracefully', async () => {
@@ -2164,7 +2206,7 @@ describe('MarketplaceClient', () => {
     const sources = await client.getSources();
 
     // Should fall back to BUILTIN_SOURCE
-    expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'claude-plugins-official')).toBe(true);
     // Should have logged a warning
     expect(logger.warn).toHaveBeenCalled();
   });
@@ -2207,15 +2249,15 @@ describe('MarketplaceClient', () => {
     const sources = await client.getSources();
 
     // Only github entry with repo should appear (actual IDs, no prefix)
-    expect(sources.some(s => s.sourceId === 'github-plugins')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'gitlab-plugins')).toBe(false);
-    expect(sources.some(s => s.sourceId === 'no-repo')).toBe(false);
+    expect(sources.some((s) => s.sourceId === 'github-plugins')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'gitlab-plugins')).toBe(false);
+    expect(sources.some((s) => s.sourceId === 'no-repo')).toBe(false);
 
     // Cleanup
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('loadSourceConfigs appends custom sources alongside native sources', async () => {
+  it('loadSourceConfigs returns only native sources (no DataStore custom sources)', async () => {
     const fs = await import('fs/promises');
     const path = await import('path');
     const tmpDir = '/tmp/plughub-native-custom-test-' + Date.now();
@@ -2253,10 +2295,10 @@ describe('MarketplaceClient', () => {
     const client = makeClient({ claudeRootPath: tmpDir, dataStore });
     const sources = await client.getSources();
 
-    // Should have native source (actual ID) + custom source, but NOT BUILTIN_SOURCE
-    expect(sources.some(s => s.sourceId === 'native-mp')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'custom-999')).toBe(true);
-    expect(sources.some(s => s.sourceId === 'claude-plugins-official')).toBe(false);
+    // Should have native source only — custom sources no longer loaded from DataStore
+    expect(sources.some((s) => s.sourceId === 'native-mp')).toBe(true);
+    expect(sources.some((s) => s.sourceId === 'custom-999')).toBe(false);
+    expect(sources.some((s) => s.sourceId === 'claude-plugins-official')).toBe(false);
 
     // Cleanup
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -2275,9 +2317,14 @@ describe('MarketplaceClient — checkForUpdates', () => {
       getPreferences: vi.fn().mockResolvedValue({ marketplaceSources: [] }),
     });
     // getComponents returns items without installedFrom
-    (dataStore as Record<string, unknown>).getComponents = vi.fn().mockResolvedValue([
-      { id: { tool: 'claude-code', type: 'skill', name: 'test', scope: 'user' }, tracking: 'detected' },
-    ]);
+    (dataStore as Record<string, unknown>).getComponents = vi
+      .fn()
+      .mockResolvedValue([
+        {
+          id: { tool: 'claude-code', type: 'skill', name: 'test', scope: 'user' },
+          tracking: 'detected',
+        },
+      ]);
 
     const client = makeClient({ dataStore });
     const result = await client.checkForUpdates();
@@ -2306,23 +2353,27 @@ describe('MarketplaceClient — checkForUpdates', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     // First call: manifest fetch for init
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        name: 'marketplace',
-        plugins: [{ name: 'my-plugin', source: './my-plugin', description: 'test' }],
-      }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          name: 'marketplace',
+          plugins: [{ name: 'my-plugin', source: './my-plugin', description: 'test' }],
+        }),
+        { status: 200 },
+      ),
     );
     // Second call: plugin detail
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        name: 'my-plugin',
-        version: '2.0.0',
-        description: 'Updated plugin',
-      }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          name: 'my-plugin',
+          version: '2.0.0',
+          description: 'Updated plugin',
+        }),
+        { status: 200 },
+      ),
     );
     // Third call: scan for components in plugin dir
-    fetchSpy.mockResolvedValueOnce(
-      new Response('', { status: 404 }),
-    );
+    fetchSpy.mockResolvedValueOnce(new Response('', { status: 404 }));
 
     const client = makeClient({ dataStore });
     const result = await client.checkForUpdates();
@@ -2400,9 +2451,18 @@ describe('MarketplaceClient — install sets upstream tracking', () => {
     const pluginDetail = {
       entry: makeEntry({ version: '1.0.0' }),
       components: [
-        { type: 'skill', name: 'test-skill', description: 'A skill', core: { description: 'test', content: '# Test' } },
+        {
+          type: 'skill',
+          name: 'test-skill',
+          description: 'A skill',
+          core: { description: 'test', content: '# Test' },
+        },
       ],
-      installSource: { type: 'marketplace', marketplace: 'claude-plugins-official', ref: 'test-plugin' },
+      installSource: {
+        type: 'marketplace',
+        marketplace: 'claude-plugins-official',
+        ref: 'test-plugin',
+      },
     };
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

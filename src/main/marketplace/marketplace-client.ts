@@ -34,7 +34,6 @@ import { componentContentHash, isSensitiveEnvKey } from '@shared/utils';
 import { join } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { assertWriteAllowed } from '../write-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -208,9 +207,20 @@ export class MarketplaceClient {
       // Build a filtered env that strips sensitive variables
       const safeEnv: Record<string, string> = {};
       const SAFE_ENV_KEYS = new Set([
-        'PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
-        'TEMP', 'TMP', 'SystemRoot', 'COMSPEC', 'SHELL',
-        'LANG', 'LC_ALL', 'TERM', 'NODE_ENV',
+        'PATH',
+        'HOME',
+        'USERPROFILE',
+        'APPDATA',
+        'LOCALAPPDATA',
+        'TEMP',
+        'TMP',
+        'SystemRoot',
+        'COMSPEC',
+        'SHELL',
+        'LANG',
+        'LC_ALL',
+        'TERM',
+        'NODE_ENV',
       ]);
       for (const [key, value] of Object.entries(process.env)) {
         if (value !== undefined && (SAFE_ENV_KEYS.has(key) || !isSensitiveEnvKey(key))) {
@@ -647,53 +657,36 @@ export class MarketplaceClient {
       throw new AppError('VALIDATION_ERROR', 'Source URL must use HTTPS', true);
     }
 
-    // Check for duplicate URL
-    if (this.sourceConfigs.some((s) => s.url === config.url)) {
+    // Check for duplicate URL (using normalized comparison)
+    if (this.sourceConfigs.some((s) => this.normalizeUrlForCompare(s.url) === this.normalizeUrlForCompare(config.url))) {
       throw new AppError('VALIDATION_ERROR', 'A source with this URL already exists', true);
     }
 
-    const sourceId = `custom-${Date.now()}`;
-    const newConfig: MarketplaceSourceConfig = {
-      sourceId,
-      sourceType: config.sourceType,
-      url: config.url,
-      displayName: config.displayName ?? config.url,
-      isBuiltIn: false,
-    };
+    // Capture sourceIds before reload for set-difference fallback
+    const beforeIds = new Set(this.sourceConfigs.map((s) => s.sourceId));
 
-    // Validate by trying to fetch
-    const source = this.createSource(newConfig);
-    await source.fetch(); // Throws on invalid source
+    // Delegate to Claude CLI — the app is a thin wrapper, not a parallel state layer
+    const { execCli } = await import('../adapters/cli-exec');
+    await execCli('claude', ['plugins', 'marketplace', 'add', config.url]);
+    this.logger.info('Marketplace', `Added "${config.url}" via Claude CLI`);
 
-    this.sourceConfigs.push(newConfig);
-    await this.saveSourceConfigs();
+    // Reload sources from Claude Code's config to pick up the new entry
+    this.sourceConfigs = await this.loadSourceConfigs();
     await this.rebuildSources();
 
-    return newConfig;
-  }
-
-  async updateSource(
-    sourceId: string,
-    config: Partial<NewSourceConfig>,
-  ): Promise<MarketplaceSourceConfig> {
-    await this.init();
-
-    const idx = this.sourceConfigs.findIndex((s) => s.sourceId === sourceId);
-    if (idx === -1) throw new AppError('SOURCE_NOT_FOUND', `Source "${sourceId}" not found`, true);
-    if (this.sourceConfigs[idx].isBuiltIn) {
-      throw new AppError('VALIDATION_ERROR', 'Cannot modify built-in source', false);
+    // Return the newly added config — use normalized URL comparison (CLI may alter URL format)
+    const normalizedInput = this.normalizeUrlForCompare(config.url);
+    const added =
+      this.sourceConfigs.find((s) => this.normalizeUrlForCompare(s.url) === normalizedInput) ??
+      this.sourceConfigs.find((s) => !beforeIds.has(s.sourceId));
+    if (!added) {
+      throw new AppError(
+        'SOURCE_NOT_FOUND',
+        `Source was added via CLI but could not be read back from Claude Code's config. Try refreshing.`,
+        true,
+      );
     }
-
-    if (config.url && !config.url.startsWith('https://')) {
-      throw new AppError('VALIDATION_ERROR', 'Source URL must use HTTPS', true);
-    }
-
-    const updated = { ...this.sourceConfigs[idx], ...config };
-    this.sourceConfigs[idx] = updated;
-    await this.saveSourceConfigs();
-    await this.rebuildSources();
-
-    return updated;
+    return added;
   }
 
   async removeSource(sourceId: string): Promise<void> {
@@ -702,69 +695,32 @@ export class MarketplaceClient {
     const config = this.sourceConfigs.find((s) => s.sourceId === sourceId);
     if (!config) throw new AppError('SOURCE_NOT_FOUND', `Source "${sourceId}" not found`, true);
 
-    // Built-in sources (from Claude Code's known_marketplaces.json) — remove from the file
-    if (config.isBuiltIn) {
-      await this.removeNativeMarketplaceSource(sourceId);
-    } else {
-      // Custom sources persist in DataStore preferences
-      await this.saveSourceConfigs();
-    }
+    // Delegate to Claude CLI — all sources are managed by Claude Code
+    const { execCli } = await import('../adapters/cli-exec');
+    await execCli('claude', ['plugins', 'marketplace', 'remove', sourceId]);
+    this.logger.info('Marketplace', `Removed "${sourceId}" via Claude CLI`);
 
-    this.sourceConfigs = this.sourceConfigs.filter((s) => s.sourceId !== sourceId);
-    this.sources.delete(sourceId);
+    // Reload from Claude Code's config
+    this.sourceConfigs = await this.loadSourceConfigs();
+    await this.rebuildSources();
 
     await this.cache.invalidateSource(sourceId);
   }
 
-  /** Remove a native marketplace entry from Claude Code's config files */
-  private async removeNativeMarketplaceSource(sourceId: string): Promise<void> {
-    if (!this.claudeRootPath) return;
+  // ─── Internal ──────────────────────────────────────────────────────
 
-    const fs = await import('fs/promises');
-    let removed = false;
-
-    // Try known_marketplaces.json first
+  /**
+   * Normalize a URL for comparison — lowercases protocol/host and strips trailing slashes.
+   * Handles cases where the CLI normalizes URLs differently than user input.
+   */
+  private normalizeUrlForCompare(url: string): string {
     try {
-      const knownPath = join(this.claudeRootPath, 'plugins', 'known_marketplaces.json');
-      const content = await fs.readFile(knownPath, 'utf-8');
-      const data = JSON.parse(content) as Record<string, unknown>;
-      if (sourceId in data) {
-        delete data[sourceId];
-        assertWriteAllowed(knownPath);
-        await fs.writeFile(knownPath, JSON.stringify(data, null, 2), 'utf-8');
-        this.logger.info('Marketplace', `Removed "${sourceId}" from known_marketplaces.json`);
-        removed = true;
-      }
+      const u = new URL(url);
+      return u.href.replace(/\/+$/, '');
     } catch {
-      // File may not exist — continue to settings.json
-    }
-
-    // Also try settings.json → extraKnownMarketplaces
-    try {
-      const settingsPath = join(this.claudeRootPath, 'settings.json');
-      const content = await fs.readFile(settingsPath, 'utf-8');
-      const settings = JSON.parse(content) as Record<string, unknown>;
-      const extra = settings.extraKnownMarketplaces as Record<string, unknown> | undefined;
-      if (extra && sourceId in extra) {
-        delete extra[sourceId];
-        if (Object.keys(extra).length === 0) {
-          delete settings.extraKnownMarketplaces;
-        }
-        assertWriteAllowed(settingsPath);
-        await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-        this.logger.info('Marketplace', `Removed "${sourceId}" from settings.json extraKnownMarketplaces`);
-        removed = true;
-      }
-    } catch {
-      // settings.json may not exist or be unreadable
-    }
-
-    if (!removed) {
-      this.logger.warn('Marketplace', `Source "${sourceId}" not found in any Claude Code config file`);
+      return url.toLowerCase().replace(/\/+$/, '');
     }
   }
-
-  // ─── Internal ──────────────────────────────────────────────────────
 
   private async fetchSourceEntries(sourceId: string): Promise<MarketplaceEntry[]> {
     const source = this.sources.get(sourceId);
@@ -901,7 +857,9 @@ export class MarketplaceClient {
     try {
       const settingsPath = join(this.claudeRootPath, 'settings.json');
       const content = await fs.readFile(settingsPath, 'utf-8');
-      const settings = JSON.parse(content) as { extraKnownMarketplaces?: Record<string, KnownMarketplace> };
+      const settings = JSON.parse(content) as {
+        extraKnownMarketplaces?: Record<string, KnownMarketplace>;
+      };
       if (settings.extraKnownMarketplaces) {
         for (const src of this.marketplaceEntriesToSources(settings.extraKnownMarketplaces)) {
           merged.set(src.sourceId, src); // Override known_marketplaces.json entry if same ID
@@ -919,21 +877,10 @@ export class MarketplaceClient {
       // 1. Try native marketplace sources from Claude Code
       const nativeSources = await this.loadNativeMarketplaceSources();
 
-      // 2. Use native sources if available, otherwise fall back to hardcoded
-      const builtInSources = nativeSources.length > 0 ? nativeSources : [BUILTIN_SOURCE];
-
-      // 3. Append any user-added custom sources from DataStore
-      const prefs = await this.dataStore.getPreferences();
-      const customSources = (prefs.marketplaceSources ?? []).filter((s) => !s.isBuiltIn);
-
-      return [...builtInSources, ...customSources];
+      // All sources come from Claude Code — no app-level custom sources
+      return nativeSources.length > 0 ? nativeSources : [BUILTIN_SOURCE];
     } catch {
       return [BUILTIN_SOURCE];
     }
-  }
-
-  private async saveSourceConfigs(): Promise<void> {
-    const custom = this.sourceConfigs.filter((s) => !s.isBuiltIn);
-    await this.dataStore.setPreferences({ marketplaceSources: custom });
   }
 }

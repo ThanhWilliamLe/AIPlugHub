@@ -24,6 +24,7 @@ export type ErrorCode =
   | 'SOURCE_NOT_FOUND'
   | 'VALIDATION_ERROR'
   | 'INSTALL_FAILED'
+  | 'UNINSTALL_FAILED'
   | 'INTERNAL_ERROR'
   | 'BACKUP_DISK_FULL'
   | 'BACKUP_PERMISSION_DENIED'
@@ -35,7 +36,8 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'DUPLICATE'
   | 'LIMIT_EXCEEDED'
-  | 'UPDATE_FAILED';
+  | 'UPDATE_FAILED'
+  | 'CLI_EXEC_FAILED';
 
 export class AppError extends Error {
   constructor(

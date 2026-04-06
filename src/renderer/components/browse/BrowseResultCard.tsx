@@ -6,7 +6,7 @@
 
 import React from 'react';
 import type { MarketplaceEntry, MarketplaceRef } from '@shared/types';
-import { TOOL_META } from '@shared/constants';
+import { TOOL_META, ENABLED_TOOL_SET } from '@shared/constants';
 import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { cn } from '@renderer/lib/utils';
 import type { ComponentType } from '@shared/types';
@@ -117,7 +117,7 @@ export const BrowseResultCard = React.memo(function BrowseResultCard({
       {/* Footer: badges + author */}
       <div className="flex items-center gap-2 mt-2 flex-wrap">
         {/* Tool badges */}
-        {entry.tools.map((toolId) => {
+        {entry.tools.filter((id) => ENABLED_TOOL_SET.has(id)).map((toolId) => {
           const meta = TOOL_META[toolId];
           if (!meta) return null;
           return (

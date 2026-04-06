@@ -50,17 +50,20 @@ export function useRovingFocus({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, resetDeps);
 
-  const scrollToIndex = useCallback((index: number) => {
+  /** Scroll the focused item to the center of the scrollable panel. */
+  const scrollToIndex = useCallback((index: number, _direction?: 'down' | 'up') => {
     const el = itemRefs.current.get(index);
-    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    el?.focus({ preventScroll: true });
+    if (!el) return;
+
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    el.focus({ preventScroll: true });
   }, []);
 
   const moveFocus = useCallback(
-    (nextIndex: number) => {
+    (nextIndex: number, direction?: 'down' | 'up') => {
       const clamped = Math.max(0, Math.min(nextIndex, itemCount - 1));
       setFocusIndex(clamped);
-      scrollToIndex(clamped);
+      scrollToIndex(clamped, direction);
     },
     [itemCount, scrollToIndex],
   );
@@ -74,24 +77,24 @@ export function useRovingFocus({
         case 'j': {
           e.preventDefault();
           const next = focusIndex < 0 ? 0 : focusIndex + 1;
-          moveFocus(next);
+          moveFocus(next, 'down');
           break;
         }
         case 'ArrowUp':
         case 'k': {
           e.preventDefault();
           const prev = focusIndex < 0 ? 0 : focusIndex - 1;
-          moveFocus(prev);
+          moveFocus(prev, 'up');
           break;
         }
         case 'Home': {
           e.preventDefault();
-          moveFocus(0);
+          moveFocus(0, 'up');
           break;
         }
         case 'End': {
           e.preventDefault();
-          moveFocus(itemCount - 1);
+          moveFocus(itemCount - 1, 'down');
           break;
         }
         case 'Enter': {
@@ -102,10 +105,14 @@ export function useRovingFocus({
           break;
         }
         case ' ': {
-          if (focusIndex >= 0) {
-            e.preventDefault();
-            onSpace?.(focusIndex);
+          e.preventDefault();
+          // Auto-focus first item if nothing focused yet
+          const idx = focusIndex >= 0 ? focusIndex : 0;
+          if (focusIndex < 0) {
+            setFocusIndex(0);
+            scrollToIndex(0);
           }
+          onSpace?.(idx);
           break;
         }
         case 'Escape': {
@@ -114,7 +121,7 @@ export function useRovingFocus({
         }
       }
     },
-    [focusIndex, itemCount, moveFocus, onEnter, onSpace, onEscape],
+    [focusIndex, itemCount, moveFocus, scrollToIndex, onEnter, onSpace, onEscape],
   );
 
   const getItemProps = useCallback(

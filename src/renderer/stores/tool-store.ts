@@ -13,6 +13,7 @@ import type {
   UpdateStatus,
 } from '@shared/types';
 import { componentIdEquals, friendlyError } from '@shared/utils';
+import { ENABLED_TOOL_SET } from '@shared/constants';
 
 export { componentIdEquals };
 
@@ -71,7 +72,8 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
   detectTools: async () => {
     set({ loading: true, error: null });
     try {
-      const tools = await window.aiplughub.tools.detect();
+      const allTools = await window.aiplughub.tools.detect();
+      const tools = allTools.filter((t) => ENABLED_TOOL_SET.has(t.toolId));
       set({ tools, loading: false });
     } catch (err) {
       set({ loading: false, error: friendlyError((err as Error).message).message });
@@ -82,7 +84,8 @@ export const useToolStore = create<ToolStoreState>((set, get) => ({
     if (get().scanning) return; // Guard against concurrent calls
     set({ scanning: true, error: null });
     try {
-      const components = await window.aiplughub.tools.scanAll();
+      const allComponents = await window.aiplughub.tools.scanAll();
+      const components = allComponents.filter((c) => ENABLED_TOOL_SET.has(c.id.tool));
       set({ components, scanning: false });
     } catch (err) {
       set({ scanning: false, error: friendlyError((err as Error).message).message });

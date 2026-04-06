@@ -95,7 +95,7 @@ const TOOL_ID = 'claude-code' as const;
 export type ClaudeCodeAdapterExtended = ToolAdapter & {
   togglePlugin(pluginKey: string, enabled: boolean): Promise<void>;
   uninstallPlugin(pluginKey: string): Promise<void>;
-  installPlugin(plugin: PortablePlugin): Promise<Component[]>;
+  installPlugin(plugin: PortablePlugin, target?: InstallTarget): Promise<Component[]>;
   getKnownMarketplaces(): Promise<KnownMarketplaceEntry[]>;
 };
 
@@ -155,13 +155,7 @@ export function createClaudeCodeAdapter(
 
   /** Validate component name does not contain path traversal characters. */
   function validateName(name: string): void {
-    if (
-      name.includes('..') ||
-      name.includes(sep) ||
-      name.includes('/') ||
-      name.includes('\\') ||
-      name.includes('\0')
-    ) {
+    if (name.includes('..') || name.includes('\\') || name.includes('\0')) {
       throw new AppError(
         'CONFIG_PERMISSION',
         `Component name contains invalid characters: "${name}"`,
@@ -887,41 +881,38 @@ export function createClaudeCodeAdapter(
     portable: PortableComponent,
     target: InstallTarget,
   ): Promise<Component> {
-    const mcpPath = mcpConfigPath();
-    let data: McpConfigData = {};
-
-    try {
-      if (await configIO.exists(mcpPath)) {
-        data = (await configIO.readJSON(mcpPath)) as McpConfigData;
-      }
-    } catch {
-      // Start fresh
-    }
-
-    if (!data.mcpServers) data.mcpServers = {};
-
+    const { execCli } = await import('./cli-exec');
     const core = portable.core as McpServerCore;
-    let serverConfig: Record<string, unknown>;
+    const scope = target.scope || 'user';
 
+    const args = ['mcp', 'add', '--scope', scope, '-t', core.transport ?? 'stdio'];
     if (core.transport === 'stdio') {
-      serverConfig = { command: core.command };
-      if (core.args) serverConfig.args = core.args;
-      if (core.env) serverConfig.env = core.env;
+      if (core.env) {
+        for (const [k, v] of Object.entries(core.env)) {
+          args.push('-e', `${k}=${v}`);
+        }
+      }
+      args.push(portable.name);
+      if (core.command) args.push(core.command);
+      if (core.args) args.push(...core.args);
     } else {
-      serverConfig = { type: core.transport, url: core.url };
-      if (core.headers) serverConfig.headers = core.headers;
+      args.push(portable.name);
+      if (core.url) args.push(core.url);
     }
 
-    if (data.mcpServers[portable.name]) {
-      logger.warn(MODULE, `Overwriting existing MCP server "${portable.name}"`);
-    }
-    data.mcpServers[portable.name] = serverConfig;
-    await configIO.writeJSON(mcpPath, data);
+    await execCli('claude', args, { cwd: target.projectPath });
+    logger.info(MODULE, `MCP server "${portable.name}" installed via Claude CLI (scope: ${scope})`);
 
     return {
-      id: { tool: TOOL_ID, type: 'mcp-server', name: portable.name, scope: target.scope },
+      id: {
+        tool: TOOL_ID,
+        type: 'mcp-server',
+        name: portable.name,
+        scope,
+        projectPath: target.projectPath,
+      },
       core,
-      configPath: mcpPath,
+      configPath: target.projectPath ? join(target.projectPath, '.claude.json') : mcpConfigPath(),
       tracking: 'managed',
     };
   }
@@ -931,8 +922,12 @@ export function createClaudeCodeAdapter(
     target: InstallTarget,
   ): Promise<Component> {
     validateName(portable.name);
-    const dir = join(skillsDir(), portable.name);
-    assertPathWithin(dir, rootPath);
+    const baseDir = target.projectPath
+      ? join(target.projectPath, '.claude', 'skills')
+      : skillsDir();
+    const guardPath = target.projectPath ?? rootPath;
+    const dir = join(baseDir, portable.name);
+    assertPathWithin(dir, guardPath);
     await mkdir(dir, { recursive: true });
 
     const core = portable.core as SkillCore;
@@ -971,7 +966,10 @@ export function createClaudeCodeAdapter(
     target: InstallTarget,
   ): Promise<Component> {
     validateName(portable.name);
-    const dir = commandsDir();
+    const dir = target.projectPath
+      ? join(target.projectPath, '.claude', 'commands')
+      : commandsDir();
+    const guardPath = target.projectPath ?? rootPath;
     await mkdir(dir, { recursive: true });
 
     const core = portable.core as CommandCore;
@@ -982,7 +980,7 @@ export function createClaudeCodeAdapter(
     const fmYaml = yaml.dump(fmObj, { lineWidth: -1 }).trimEnd();
     const content = `---\n${fmYaml}\n---\n${core.content}`;
     const filePath = join(dir, `${portable.name}.md`);
-    assertPathWithin(filePath, rootPath);
+    assertPathWithin(filePath, guardPath);
     await configIO.writeFile(filePath, content);
 
     return {
@@ -999,7 +997,8 @@ export function createClaudeCodeAdapter(
     target: InstallTarget,
   ): Promise<Component> {
     validateName(portable.name);
-    const dir = agentsDir();
+    const dir = target.projectPath ? join(target.projectPath, '.claude', 'agents') : agentsDir();
+    const guardPath = target.projectPath ?? rootPath;
     await mkdir(dir, { recursive: true });
 
     const core = portable.core as AgentCore;
@@ -1020,7 +1019,7 @@ export function createClaudeCodeAdapter(
     const fmYaml = yaml.dump(fmObj, { lineWidth: -1 }).trimEnd();
     const content = `---\n${fmYaml}\n---\n`;
     const filePath = join(dir, `${portable.name}.md`);
-    assertPathWithin(filePath, rootPath);
+    assertPathWithin(filePath, guardPath);
     await configIO.writeFile(filePath, content);
 
     return {
@@ -1035,18 +1034,10 @@ export function createClaudeCodeAdapter(
   // -- Uninstall sub-routines --
 
   async function uninstallMcpServer(id: ComponentId): Promise<void> {
-    const mcpPath = id.projectPath ? join(id.projectPath, '.claude.json') : mcpConfigPath();
-    if (!(await configIO.exists(mcpPath))) {
-      throw new AppError('COMPONENT_NOT_FOUND', `MCP config not found: ${mcpPath}`, true);
-    }
-
-    const data = (await configIO.readJSON(mcpPath)) as McpConfigData;
-    if (!data.mcpServers || !(id.name in data.mcpServers)) {
-      throw new AppError('COMPONENT_NOT_FOUND', `MCP server "${id.name}" not found`, true);
-    }
-
-    delete data.mcpServers[id.name];
-    await configIO.writeJSON(mcpPath, data);
+    const { execCli } = await import('./cli-exec');
+    const scope = id.scope || 'user';
+    await execCli('claude', ['mcp', 'remove', '--scope', scope, id.name], { cwd: id.projectPath });
+    logger.info(MODULE, `MCP server "${id.name}" removed via Claude CLI (scope: ${scope})`);
   }
 
   async function uninstallFileComponent(id: ComponentId): Promise<void> {
@@ -1137,6 +1128,44 @@ export function createClaudeCodeAdapter(
     await configIO.writeJSON(path, settings);
   }
 
+  // -- Scope validation --
+
+  const VALID_SCOPES = new Set(['user', 'project', 'local']);
+
+  function assertValidScope(scope: string): void {
+    if (!VALID_SCOPES.has(scope)) {
+      throw new AppError('VALIDATION_ERROR', `Invalid scope: "${scope}"`, false);
+    }
+  }
+
+  // -- CLI-first plugin install --
+
+  async function installPluginViaCli(
+    plugin: PortablePlugin,
+    target?: InstallTarget,
+  ): Promise<Component[]> {
+    const { execCli } = await import('./cli-exec');
+    const scope = target?.scope ?? 'user';
+    assertValidScope(scope);
+    const args = ['plugins', 'install', '--scope', scope, plugin.pluginKey];
+    await execCli('claude', args);
+    logger.info(MODULE, `Plugin "${plugin.pluginKey}" installed via Claude CLI (scope: ${scope})`);
+
+    // Re-scan to pick up installed components (same pattern as marketplace-client.ts)
+    const allComponents = await scanPlugins();
+    const installed = allComponents.filter(
+      (c) => (c.extensions as Record<string, unknown> | undefined)?.pluginKey === plugin.pluginKey,
+    );
+
+    if (installed.length > 0) return installed;
+
+    logger.warn(
+      MODULE,
+      `installPluginViaCli: CLI succeeded but re-scan found no components for ${plugin.pluginKey}`,
+    );
+    return [];
+  }
+
   // -- ToolAdapter implementation --
 
   return {
@@ -1146,8 +1175,18 @@ export function createClaudeCodeAdapter(
 
     async detect(): Promise<ToolDetectionResult> {
       const detected = await isDir(rootPath);
-      logger.info(MODULE, `detect: ${rootPath} → ${detected}`);
-      return { toolId: TOOL_ID, instanceId, path: rootPath, detected };
+      let cliAvailable: boolean | undefined;
+      if (detected) {
+        try {
+          const { execCli } = await import('./cli-exec');
+          await execCli('claude', ['--version'], { timeout: 5_000 });
+          cliAvailable = true;
+        } catch {
+          cliAvailable = false;
+        }
+      }
+      logger.info(MODULE, `detect: ${rootPath} → ${detected} (cli: ${cliAvailable})`);
+      return { toolId: TOOL_ID, instanceId, path: rootPath, detected, cliAvailable };
     },
 
     async scan(): Promise<Component[]> {
@@ -1302,85 +1341,28 @@ export function createClaudeCodeAdapter(
 
     async togglePlugin(pluginKey: string, enabled: boolean): Promise<void> {
       logger.info(MODULE, `togglePlugin: ${pluginKey} → ${enabled}`);
-      const path = settingsPath();
-      let settings: SettingsData = {};
-
-      try {
-        if (await configIO.exists(path)) {
-          settings = (await configIO.readJSON(path)) as SettingsData;
-        }
-      } catch {
-        // Start fresh
-      }
-
-      if (!settings.enabledPlugins) settings.enabledPlugins = {};
-      settings.enabledPlugins[pluginKey] = enabled;
-      await configIO.writeJSON(path, settings);
+      const { execCli } = await import('./cli-exec');
+      const verb = enabled ? 'enable' : 'disable';
+      await execCli('claude', ['plugins', verb, '--scope', 'user', pluginKey]);
+      logger.info(MODULE, `Plugin "${pluginKey}" ${verb}d via Claude CLI`);
     },
 
     async uninstallPlugin(pluginKey: string): Promise<void> {
       logger.info(MODULE, `uninstallPlugin: ${pluginKey}`);
-      const regPath = installedPluginsPath();
-
-      if (!(await configIO.exists(regPath))) {
-        throw new AppError('COMPONENT_NOT_FOUND', `Plugin registry not found: ${regPath}`, true);
-      }
-
-      const data = (await configIO.readJSON(regPath)) as InstalledPluginsData;
-      if (!data?.plugins || !(pluginKey in data.plugins)) {
-        throw new AppError(
-          'COMPONENT_NOT_FOUND',
-          `Plugin "${pluginKey}" not found in registry`,
-          true,
-        );
-      }
-
-      const entries = data.plugins[pluginKey];
-      const pDir = pluginsDir();
-
-      // Delete each entry's installPath (with safety checks)
-      for (const entry of entries) {
-        if (!entry.installPath) continue;
-
-        // Path traversal protection: installPath must be within pluginsDir
-        assertPathWithin(entry.installPath, pDir);
-
-        // Symlink protection
-        await assertNotSymlink(entry.installPath);
-
-        // Delete the cache directory
-        try {
-          await rm(entry.installPath, { recursive: true, force: true });
-          logger.info(MODULE, `Deleted plugin cache: ${entry.installPath}`);
-        } catch (err) {
-          logger.warn(MODULE, `Failed to delete plugin cache: ${entry.installPath}`, err);
-        }
-      }
-
-      // Remove from registry
-      delete data.plugins[pluginKey];
-      await configIO.writeJSON(regPath, data);
-
-      // Remove from enabledPlugins in settings.json if present
-      try {
-        const sPath = settingsPath();
-        if (await configIO.exists(sPath)) {
-          const settings = (await configIO.readJSON(sPath)) as SettingsData;
-          if (settings?.enabledPlugins && pluginKey in settings.enabledPlugins) {
-            delete settings.enabledPlugins[pluginKey];
-            if (Object.keys(settings.enabledPlugins).length === 0) {
-              delete settings.enabledPlugins;
-            }
-            await configIO.writeJSON(sPath, settings);
-          }
-        }
-      } catch (err) {
-        logger.warn(MODULE, `Failed to clean up enabledPlugins for ${pluginKey}`, err);
-      }
+      const { execCli } = await import('./cli-exec');
+      await execCli('claude', ['plugins', 'uninstall', '--scope', 'user', pluginKey]);
+      logger.info(MODULE, `Plugin "${pluginKey}" uninstalled via Claude CLI`);
     },
 
-    async installPlugin(plugin: PortablePlugin): Promise<Component[]> {
+    async installPlugin(plugin: PortablePlugin, target?: InstallTarget): Promise<Component[]> {
       logger.info(MODULE, `installPlugin: ${plugin.pluginKey}`);
+
+      // CLI-first path: marketplace plugins use `claude plugins install`
+      if (plugin.marketplace) {
+        return installPluginViaCli(plugin, target);
+      }
+
+      // Fallback: non-marketplace plugins use direct file writes
       const pDir = pluginsDir();
 
       // Determine install path — pluginKey is "name@marketplace"

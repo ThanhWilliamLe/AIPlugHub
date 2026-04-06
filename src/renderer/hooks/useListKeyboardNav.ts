@@ -90,7 +90,7 @@ export function useListKeyboardNav({
 
       if (nextIndex !== null && nextIndex !== currentIndex) {
         items[nextIndex].focus({ preventScroll: true });
-        items[nextIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        items[nextIndex].scrollIntoView({ block: 'center', behavior: 'instant' });
       }
     },
     [getItems, onActivate, onSpace, onEscape],

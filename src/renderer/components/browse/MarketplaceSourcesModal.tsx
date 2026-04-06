@@ -278,6 +278,12 @@ export function MarketplaceSourcesModal({
                     aria-label="Display name"
                   />
                 </div>
+                {submitting && (
+                  <div className="flex items-center gap-2 text-xs text-sand-secondary animate-pulse">
+                    <span className="inline-block w-3 h-3 border-2 border-accent-olive/40 border-t-accent-olive rounded-full animate-spin" />
+                    Fetching and validating source...
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -294,6 +300,7 @@ export function MarketplaceSourcesModal({
                       setAdding(false);
                       setError(null);
                     }}
+                    disabled={submitting}
                   >
                     Cancel
                   </Button>

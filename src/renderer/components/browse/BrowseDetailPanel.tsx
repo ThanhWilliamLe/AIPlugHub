@@ -11,7 +11,7 @@ import { TypeBadge } from '@renderer/components/shared/TypeBadge';
 import { InstallButton } from './InstallButton';
 import { cn } from '@renderer/lib/utils';
 import type { ComponentType } from '@shared/types';
-import { TOOL_META } from '@shared/constants';
+import { TOOL_META, ENABLED_TOOL_SET } from '@shared/constants';
 import { isEntryInstalled, findInstalledVersion } from '@renderer/lib/install-match';
 
 export function BrowseDetailPanel() {
@@ -98,7 +98,7 @@ export function BrowseDetailPanel() {
           {entry && (
             <InstallButton
               ref_={selectedRef}
-              compatibleTools={entry.tools}
+              compatibleTools={entry.tools.filter((id) => ENABLED_TOOL_SET.has(id))}
               isInstalled={isEntryInstalled(installedComponents, entry)}
               installedVersion={findInstalledVersion(installedComponents, entry)}
             />
@@ -177,13 +177,13 @@ export function BrowseDetailPanel() {
           )}
 
           {/* Compatible tools */}
-          {entry && entry.tools.length > 0 && (
+          {entry && entry.tools.filter((id) => ENABLED_TOOL_SET.has(id)).length > 0 && (
             <section>
               <h3 className="text-xs font-medium text-sand-secondary uppercase tracking-wider mb-2">
                 Compatible with
               </h3>
               <div className="flex flex-wrap gap-2">
-                {entry.tools.map((toolId) => {
+                {entry.tools.filter((id) => ENABLED_TOOL_SET.has(id)).map((toolId) => {
                   const meta = TOOL_META[toolId];
                   if (!meta) return null;
                   return (

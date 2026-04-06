@@ -88,13 +88,19 @@ export const TOOL_META: Record<ToolId, { label: string; emoji: string }> = {
   antigravity: { label: 'Antigravity', emoji: '\u{1F680}' },
 };
 
-/** All supported tool IDs */
+/** All supported tool IDs (includes disabled tools — use ENABLED_TOOL_IDS for UI) */
 export const ALL_TOOL_IDS: ToolId[] = [
   'claude-code',
   'claude-desktop',
   'gemini-cli',
   'antigravity',
 ];
+
+/** Tools enabled in the current version (v2.0.0: Claude-only) */
+export const ENABLED_TOOL_IDS: ToolId[] = ['claude-code', 'claude-desktop'];
+
+/** Set for O(1) lookup */
+export const ENABLED_TOOL_SET: ReadonlySet<ToolId> = new Set(ENABLED_TOOL_IDS);
 
 /** Display metadata for plugin groups (not a ComponentType, used for UI grouping) */
 export const PLUGIN_GROUP_META = {

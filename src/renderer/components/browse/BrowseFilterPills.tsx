@@ -4,7 +4,7 @@
  */
 
 import type { ToolId, ComponentType } from '@shared/types';
-import { TOOL_META, COMPONENT_TYPE_META } from '@shared/constants';
+import { TOOL_META, COMPONENT_TYPE_META, ENABLED_TOOL_SET } from '@shared/constants';
 import {
   useBrowseStore,
   useBrowseToolCounts,
@@ -51,7 +51,7 @@ export function BrowseFilterPills() {
     sourceCounts.set(e.sourceId, (sourceCounts.get(e.sourceId) ?? 0) + 1);
   }
 
-  const activeTools = Array.from(toolCounts.keys());
+  const activeTools = Array.from(toolCounts.keys()).filter((id) => ENABLED_TOOL_SET.has(id));
   const activeTypes = Array.from(typeCounts.keys());
   const isFiltered =
     toolFilters.length > 0 ||

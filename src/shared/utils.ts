@@ -168,6 +168,15 @@ export const SOURCE_TYPE_LABELS: Record<MarketplaceSourceType, string> = {
 export function friendlyError(raw: string): { message: string; raw: string } {
   const lower = raw.toLowerCase();
   if (lower.includes('enoent') || lower.includes('spawn')) {
+    // Extract binary name from error like "claude mcp add failed: spawn claude ENOENT"
+    const binMatch = raw.match(/^(\w+)\s/);
+    const bin = binMatch?.[1];
+    if (bin && (bin === 'claude' || bin === 'gemini')) {
+      return {
+        message: `The "${bin}" command-line tool wasn't found. Make sure it's installed and available on your system PATH.`,
+        raw,
+      };
+    }
     return { message: "A required program wasn't found on your computer.", raw };
   }
   if (
@@ -179,6 +188,19 @@ export function friendlyError(raw: string): { message: string; raw: string } {
   }
   if (lower.includes('eacces') || lower.includes('eperm')) {
     return { message: 'Permission denied. Try running as administrator.', raw };
+  }
+  if (lower.includes('failed:') && (lower.includes('claude') || lower.includes('gemini'))) {
+    const cliBin = lower.includes('claude') ? 'Claude Code' : 'Gemini CLI';
+    if (lower.includes('unknown command') || lower.includes('unrecognized')) {
+      return {
+        message: `This operation requires a newer version of ${cliBin}. Please update it and try again.`,
+        raw,
+      };
+    }
+    return {
+      message: `${cliBin} reported an error. Try again or check that the tool is up to date.`,
+      raw,
+    };
   }
   return { message: 'Something went wrong during installation.', raw };
 }

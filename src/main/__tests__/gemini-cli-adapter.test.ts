@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -11,6 +11,18 @@ import { createLogger } from '../logger';
 import type { ToolAdapter } from '../adapters/tool-adapter';
 import type { PortableComponent, InstallTarget, ComponentType } from '@shared/types';
 import { AppError } from '@shared/types';
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(null, '', '');
+      },
+    ),
+  };
+});
 
 const logger = createLogger();
 const configIO = createConfigIO(logger);
@@ -314,7 +326,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(extMcp).toBeDefined();
     expect(extMcp!.id.type).toBe('mcp-server');
     expect(extMcp!.id.scope).toBe('extension:my-ext');
-    expect(extMcp!.enabled).toBeUndefined();
+    expect(extMcp!.enabled).toBe(true); // toggleable type preserves enabled
     expect(extMcp!.version).toBe('1.2.0');
 
     const core = extMcp!.core as { transport: string; command: string; args?: string[] };
@@ -330,7 +342,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
     expect(skill).toBeDefined();
     expect(skill!.id.type).toBe('skill');
     expect(skill!.id.scope).toBe('extension:my-ext');
-    expect(skill!.enabled).toBeUndefined();
+    expect(skill!.enabled).toBe(true); // toggleable type preserves enabled
     expect(skill!.version).toBe('1.2.0');
     expect(skill!.description).toBe('A test skill');
     expect(skill!.displayName).toBe('My Skill');
@@ -423,7 +435,7 @@ describe('GeminiCliAdapter.scan -- extension sub-components', () => {
 // --- scan: enablement state ---
 
 describe('GeminiCliAdapter.scan -- enablement state', () => {
-  it('marks extension components as disabled when enablement says false', async () => {
+  it('marks toggleable extension components as disabled when enablement says false', async () => {
     await writeFile(
       join(tempDir, 'extensions', 'extension-enablement.json'),
       JSON.stringify({
@@ -434,32 +446,59 @@ describe('GeminiCliAdapter.scan -- enablement state', () => {
     const components = await adapter.scan();
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
-    // enabled is stripped because canToggle() is false
     expect(extComponents.length).toBeGreaterThan(0);
-    for (const c of extComponents) {
+    // mcp-server and skill types preserve enabled; other types strip it
+    const toggleable = extComponents.filter(
+      (c) => c.id.type === 'mcp-server' || c.id.type === 'skill',
+    );
+    for (const c of toggleable) {
+      expect(c.enabled).toBe(false);
+    }
+    const nonToggleable = extComponents.filter(
+      (c) => c.id.type !== 'mcp-server' && c.id.type !== 'skill',
+    );
+    for (const c of nonToggleable) {
       expect(c.enabled).toBeUndefined();
     }
   });
 
-  it('strips enabled regardless of enablement state (canToggle is false)', async () => {
-    await writeFile(join(tempDir, 'extensions', 'extension-enablement.json'), JSON.stringify({}));
+  it('strips enabled from non-toggleable types even when enabled is true', async () => {
+    await writeFile(
+      join(tempDir, 'extensions', 'extension-enablement.json'),
+      JSON.stringify({ 'my-ext': { enabled: true } }),
+    );
 
     const components = await adapter.scan();
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
-    for (const c of extComponents) {
+    // Non-toggleable types always have enabled stripped
+    const nonToggleable = extComponents.filter(
+      (c) => c.id.type !== 'mcp-server' && c.id.type !== 'skill',
+    );
+    for (const c of nonToggleable) {
       expect(c.enabled).toBeUndefined();
     }
   });
 
-  it('strips enabled when enablement file is missing', async () => {
+  it('preserves enabled for toggleable types when enablement file is missing', async () => {
     await rm(join(tempDir, 'extensions', 'extension-enablement.json'), { force: true });
 
     const components = await adapter.scan();
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
     expect(extComponents.length).toBeGreaterThan(0);
-    for (const c of extComponents) {
+    // Toggleable types get enabled=true (default when enablement file missing)
+    const toggleable = extComponents.filter(
+      (c) => c.id.type === 'mcp-server' || c.id.type === 'skill',
+    );
+    for (const c of toggleable) {
+      expect(c.enabled).toBe(true);
+    }
+    // Non-toggleable types still have enabled stripped
+    const nonToggleable = extComponents.filter(
+      (c) => c.id.type !== 'mcp-server' && c.id.type !== 'skill',
+    );
+    for (const c of nonToggleable) {
       expect(c.enabled).toBeUndefined();
     }
   });
@@ -471,7 +510,11 @@ describe('GeminiCliAdapter.scan -- enablement state', () => {
     const extComponents = components.filter((c) => c.id.scope.startsWith('extension:'));
 
     expect(extComponents.length).toBeGreaterThan(0);
-    for (const c of extComponents) {
+    // Non-toggleable types always have enabled stripped
+    const nonToggleable = extComponents.filter(
+      (c) => c.id.type !== 'mcp-server' && c.id.type !== 'skill',
+    );
+    for (const c of nonToggleable) {
       expect(c.enabled).toBeUndefined();
     }
   });
@@ -579,10 +622,11 @@ describe('GeminiCliAdapter.scan -- missing directories', () => {
   });
 });
 
-// --- install: MCP servers into settings.json ---
+// --- install: MCP servers via CLI delegation ---
 
-describe('GeminiCliAdapter.install -- MCP servers', () => {
-  it('installs stdio MCP server to settings.json', async () => {
+describe('GeminiCliAdapter.install -- MCP servers (CLI delegation)', () => {
+  it('calls gemini mcp add for stdio server', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'new-server',
@@ -598,11 +642,16 @@ describe('GeminiCliAdapter.install -- MCP servers', () => {
     expect(result.tracking).toBe('managed');
     expect(result.configPath).toBe(join(tempDir, SETTINGS_FILE));
 
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers['new-server']).toEqual({ command: 'npx', args: ['-y', 'new-pkg'] });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'add', '--scope', 'user', '-t', 'stdio', 'new-server', 'npx', '-y', 'new-pkg'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('installs HTTP MCP server', async () => {
+  it('calls gemini mcp add for HTTP server with URL', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'http-server',
@@ -613,112 +662,33 @@ describe('GeminiCliAdapter.install -- MCP servers', () => {
       },
     };
 
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers['http-server']).toEqual({
-      url: 'https://example.com/mcp',
-      headers: { 'X-Key': 'abc' },
-    });
-  });
-
-  it('preserves existing servers when installing', async () => {
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'new-server',
-      core: { transport: 'stdio', command: 'echo', args: ['hello'] },
-    };
-
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers.filesystem).toBeDefined();
-    expect(data.mcpServers['remote-api']).toBeDefined();
-    expect(data.mcpServers['new-server']).toBeDefined();
-  });
-
-  it('preserves other top-level config keys when installing', async () => {
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'new-server',
-      core: { transport: 'stdio', command: 'node' },
-    };
-
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.theme).toBe('dark');
-  });
-
-  it('creates settings.json if missing', async () => {
-    const emptyDir = join(tempDir, 'fresh');
-    await mkdir(emptyDir, { recursive: true });
-    const freshAdapter = createGeminiCliAdapter(emptyDir, 'gc-fresh', configIO, logger);
-
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'first-server',
-      core: { transport: 'stdio', command: 'echo' },
-    };
-
-    await freshAdapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(emptyDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers['first-server']).toEqual({ command: 'echo' });
-  });
-
-  it('overwrites existing server with same name', async () => {
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'filesystem',
-      core: { transport: 'stdio', command: 'new-command', args: ['--new'] },
-    };
-
     const result = await adapter.install(portable, DEFAULT_TARGET);
-    expect(result.id.name).toBe('filesystem');
+    expect(result.id.name).toBe('http-server');
 
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers.filesystem).toEqual({ command: 'new-command', args: ['--new'] });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'add', '--scope', 'user', '-t', 'http', 'http-server', 'https://example.com/mcp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('merges Gemini-specific extensions into server config', async () => {
+  it('passes env vars with -e flags', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
-      name: 'extended-server',
-      core: { transport: 'stdio', command: 'node', args: ['server.js'] },
-      extensions: {
-        cwd: '/work/project',
-        trust: true,
-        timeout: 30000,
-        includeTools: ['tool1'],
-        excludeTools: ['tool2'],
-      },
+      name: 'env-server',
+      core: { transport: 'stdio', command: 'node', env: { HOME: '/home', KEY: 'val' } },
     };
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    const server = data.mcpServers['extended-server'];
-    expect(server.cwd).toBe('/work/project');
-    expect(server.trust).toBe(true);
-    expect(server.timeout).toBe(30000);
-    expect(server.includeTools).toEqual(['tool1']);
-    expect(server.excludeTools).toEqual(['tool2']);
-  });
-
-  it('installs successfully when existing config is corrupted', async () => {
-    await writeFile(join(tempDir, SETTINGS_FILE), '{not valid json!!!');
-
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'fresh-server',
-      core: { transport: 'stdio', command: 'echo' },
-    };
-
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers['fresh-server']).toEqual({ command: 'echo' });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      expect.arrayContaining(['-e', 'HOME=/home', '-e', 'KEY=val']),
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 });
 
@@ -802,10 +772,11 @@ describe('GeminiCliAdapter.install -- unsupported types', () => {
   });
 });
 
-// --- uninstall: MCP servers ---
+// --- uninstall: MCP servers via CLI delegation ---
 
-describe('GeminiCliAdapter.uninstall -- MCP servers', () => {
-  it('removes server from settings.json', async () => {
+describe('GeminiCliAdapter.uninstall -- MCP servers (CLI delegation)', () => {
+  it('calls gemini mcp remove for user-scope server', async () => {
+    const cp = await import('child_process');
     await adapter.uninstall({
       tool: 'gemini-cli',
       type: 'mcp-server',
@@ -813,154 +784,114 @@ describe('GeminiCliAdapter.uninstall -- MCP servers', () => {
       scope: 'user',
     });
 
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers.filesystem).toBeUndefined();
-    expect(data.mcpServers['remote-api']).toBeDefined();
-  });
-
-  it('keeps config file valid after removing last server', async () => {
-    await writeFile(
-      join(tempDir, SETTINGS_FILE),
-      JSON.stringify({ mcpServers: { only: { command: 'echo' } } }),
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'remove', '--scope', 'user', 'filesystem'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
     );
-
-    await adapter.uninstall({
-      tool: 'gemini-cli',
-      type: 'mcp-server',
-      name: 'only',
-      scope: 'user',
-    });
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.mcpServers).toEqual({});
-  });
-
-  it('preserves other top-level config keys', async () => {
-    await adapter.uninstall({
-      tool: 'gemini-cli',
-      type: 'mcp-server',
-      name: 'filesystem',
-      scope: 'user',
-    });
-
-    const data = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE), 'utf-8'));
-    expect(data.theme).toBe('dark');
-  });
-
-  it('throws COMPONENT_NOT_FOUND for missing server', async () => {
-    try {
-      await adapter.uninstall({
-        tool: 'gemini-cli',
-        type: 'mcp-server',
-        name: 'nonexistent',
-        scope: 'user',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
-    }
-  });
-
-  it('throws COMPONENT_NOT_FOUND when config file missing', async () => {
-    const emptyDir = join(tempDir, 'empty-uninstall');
-    await mkdir(emptyDir, { recursive: true });
-    const emptyAdapter = createGeminiCliAdapter(emptyDir, 'gc-empty-u', configIO, logger);
-
-    try {
-      await emptyAdapter.uninstall({
-        tool: 'gemini-cli',
-        type: 'mcp-server',
-        name: 'something',
-        scope: 'user',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
-    }
   });
 });
 
-// --- uninstall: skills ---
+// --- uninstall: skills via CLI delegation ---
 
-describe('GeminiCliAdapter.uninstall -- skills', () => {
-  it('removes skill directory', async () => {
-    // First install a skill, then uninstall it
-    const portable: PortableComponent = {
-      type: 'skill',
-      name: 'removable-skill',
-      core: { description: 'Temp', content: 'Temp content' },
-    };
-    await adapter.install(portable, DEFAULT_TARGET);
-
+describe('GeminiCliAdapter.uninstall -- skills (CLI delegation)', () => {
+  it('calls gemini skills uninstall for user-scope skill', async () => {
+    const cp = await import('child_process');
     await adapter.uninstall({
       tool: 'gemini-cli',
       type: 'skill',
-      name: 'removable-skill',
+      name: 'test-skill',
       scope: 'user',
     });
 
-    // Verify directory was removed
-    try {
-      await readFile(join(tempDir, 'skills', 'removable-skill', 'SKILL.md'), 'utf-8');
-      expect.fail('File should not exist');
-    } catch {
-      // Expected: file/directory removed
-    }
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['skills', 'uninstall', '--scope', 'user', 'test-skill'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 });
 
 // --- error handling: extension scope components ---
 
 describe('GeminiCliAdapter.uninstall -- extension scope components', () => {
-  it('rejects extension-scope MCP server (name contains slash, caught by validateName)', async () => {
-    // Extension-scoped names like "my-ext/ext-server" contain "/" which
-    // validateName rejects before the scope check can run.
-    try {
-      await adapter.uninstall({
-        tool: 'gemini-cli',
-        type: 'mcp-server',
-        name: 'my-ext/ext-server',
-        scope: 'extension:my-ext',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+  it('uninstalls extension-scope MCP server via Gemini CLI', async () => {
+    const cp = await import('child_process');
+
+    await adapter.uninstall({
+      tool: 'gemini-cli',
+      type: 'mcp-server',
+      name: 'my-ext/ext-server',
+      scope: 'extension:my-ext',
+    });
+
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['extensions', 'uninstall', 'my-ext'],
+      expect.objectContaining({ timeout: 30_000, shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('rejects extension-scope skill (name contains slash, caught by validateName)', async () => {
-    try {
-      await adapter.uninstall({
-        tool: 'gemini-cli',
-        type: 'skill',
-        name: 'my-ext/my-skill',
-        scope: 'extension:my-ext',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+  it('uninstalls extension-scope skill via Gemini CLI', async () => {
+    const cp = await import('child_process');
+
+    await adapter.uninstall({
+      tool: 'gemini-cli',
+      type: 'skill',
+      name: 'my-ext/my-skill',
+      scope: 'extension:my-ext',
+    });
+
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['extensions', 'uninstall', 'my-ext'],
+      expect.objectContaining({ timeout: 30_000, shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('throws ADAPTER_UNSUPPORTED for unsupported uninstall types', async () => {
-    // For types not handled in the uninstall switch (command, hook, agent, etc.),
-    // the default case fires before any name validation.
-    try {
-      await adapter.uninstall({
-        tool: 'gemini-cli',
-        type: 'command',
-        name: 'my-ext/hello',
-        scope: 'extension:my-ext',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('ADAPTER_UNSUPPORTED');
-    }
+  it('uninstalls extension-scope command via Gemini CLI', async () => {
+    const cp = await import('child_process');
+
+    await adapter.uninstall({
+      tool: 'gemini-cli',
+      type: 'command',
+      name: 'my-ext/hello',
+      scope: 'extension:my-ext',
+    });
+
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['extensions', 'uninstall', 'my-ext'],
+      expect.objectContaining({ timeout: 30_000, shell: true }),
+      expect.any(Function),
+    );
+  });
+
+  it('treats unclean exit as success when output contains success message', async () => {
+    const cp = await import('child_process');
+    const mockExecFile = cp.execFile as unknown as ReturnType<typeof vi.fn>;
+    mockExecFile.mockImplementationOnce(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        const err = Object.assign(new Error('Command failed'), {
+          stdout: 'Extension "my-ext" successfully uninstalled.\n',
+          stderr: 'Assertion failed: ...\n',
+          code: 1,
+        });
+        cb(err, '', '');
+      },
+    );
+
+    // Should not throw despite non-zero exit
+    await adapter.uninstall({
+      tool: 'gemini-cli',
+      type: 'mcp-server',
+      name: 'my-ext/server',
+      scope: 'extension:my-ext',
+    });
   });
 });
 
@@ -984,20 +915,15 @@ describe('GeminiCliAdapter -- name validation', () => {
     }
   });
 
-  it('install rejects names with forward slash', async () => {
+  it('install accepts namespaced names with forward slash', async () => {
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'foo/bar',
       core: { transport: 'stdio', command: 'echo' },
     };
 
-    try {
-      await adapter.install(portable, DEFAULT_TARGET);
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+    const result = await adapter.install(portable, DEFAULT_TARGET);
+    expect(result.id.name).toBe('foo/bar');
   });
 
   it('install rejects names with backslash', async () => {
@@ -1094,52 +1020,135 @@ describe('GeminiCliAdapter -- name validation', () => {
   });
 });
 
-// --- canToggle / enable / disable ---
+// --- canToggle ---
 
-describe('GeminiCliAdapter -- toggle support', () => {
-  it('canToggle returns false for all types', () => {
-    const types: ComponentType[] = [
-      'mcp-server',
-      'skill',
-      'command',
-      'hook',
-      'agent',
-      'context-file',
-      'unknown',
-    ];
-    for (const t of types) {
-      expect(adapter.canToggle(t)).toBe(false);
-    }
+describe('GeminiCliAdapter.canToggle', () => {
+  it('returns true for mcp-server', () => {
+    expect(adapter.canToggle('mcp-server')).toBe(true);
+  });
+  it('returns true for skill', () => {
+    expect(adapter.canToggle('skill')).toBe(true);
+  });
+  it('returns false for hook', () => {
+    expect(adapter.canToggle('hook')).toBe(false);
+  });
+  it('returns false for command', () => {
+    expect(adapter.canToggle('command')).toBe(false);
+  });
+  it('returns false for agent', () => {
+    expect(adapter.canToggle('agent')).toBe(false);
+  });
+  it('returns false for context-file', () => {
+    expect(adapter.canToggle('context-file')).toBe(false);
+  });
+  it('returns false for unknown', () => {
+    expect(adapter.canToggle('unknown')).toBe(false);
+  });
+});
+
+// --- enable/disable CLI delegation ---
+
+describe('GeminiCliAdapter.enable/disable -- CLI delegation', () => {
+  it('calls gemini extensions enable for extension-scope component', async () => {
+    const cp = await import('child_process');
+    await adapter.enable({
+      tool: 'gemini-cli',
+      type: 'mcp-server',
+      name: 'my-ext/ext-server',
+      scope: 'extension:my-ext',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['extensions', 'enable', 'my-ext'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('enable throws ADAPTER_UNSUPPORTED', async () => {
-    try {
-      await adapter.enable({
-        tool: 'gemini-cli',
-        type: 'mcp-server',
-        name: 'test',
-        scope: 'user',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('ADAPTER_UNSUPPORTED');
-    }
+  it('calls gemini extensions disable for extension-scope', async () => {
+    const cp = await import('child_process');
+    await adapter.disable({
+      tool: 'gemini-cli',
+      type: 'skill',
+      name: 'my-ext/my-skill',
+      scope: 'extension:my-ext',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['extensions', 'disable', 'my-ext'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('disable throws ADAPTER_UNSUPPORTED', async () => {
-    try {
-      await adapter.disable({
+  it('calls gemini mcp enable for user-scope MCP server', async () => {
+    const cp = await import('child_process');
+    await adapter.enable({
+      tool: 'gemini-cli',
+      type: 'mcp-server',
+      name: 'filesystem',
+      scope: 'user',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'enable', 'filesystem'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
+  });
+
+  it('calls gemini mcp disable for user-scope MCP server', async () => {
+    const cp = await import('child_process');
+    await adapter.disable({
+      tool: 'gemini-cli',
+      type: 'mcp-server',
+      name: 'filesystem',
+      scope: 'user',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'disable', 'filesystem'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
+  });
+
+  it('calls gemini skills enable for user-scope skill', async () => {
+    const cp = await import('child_process');
+    await adapter.enable({
+      tool: 'gemini-cli',
+      type: 'skill',
+      name: 'my-skill',
+      scope: 'user',
+    });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['skills', 'enable', 'my-skill'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
+  });
+
+  it('throws ADAPTER_UNSUPPORTED for hook enable', async () => {
+    await expect(
+      adapter.enable({
         tool: 'gemini-cli',
-        type: 'mcp-server',
-        name: 'test',
+        type: 'hook',
+        name: 'some-hook',
         scope: 'user',
-      });
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('ADAPTER_UNSUPPORTED');
-    }
+      }),
+    ).rejects.toThrow('Enable not supported for type "hook"');
+  });
+
+  it('throws ADAPTER_UNSUPPORTED for hook disable', async () => {
+    await expect(
+      adapter.disable({
+        tool: 'gemini-cli',
+        type: 'hook',
+        name: 'some-hook',
+        scope: 'user',
+      }),
+    ).rejects.toThrow('Disable not supported for type "hook"');
   });
 });
 
@@ -1182,32 +1191,24 @@ describe('GeminiCliAdapter -- metadata methods', () => {
   });
 });
 
-// --- full lifecycle ---
+// --- full lifecycle (CLI-delegated) ---
 
-describe('GeminiCliAdapter -- full lifecycle', () => {
-  it('MCP server: install -> scan -> uninstall -> scan', async () => {
+describe('GeminiCliAdapter -- full lifecycle (CLI-delegated)', () => {
+  it('MCP server: install returns correct result, uninstall calls CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'lifecycle-server',
       core: { transport: 'stdio', command: 'node', args: ['server.js'] },
     };
 
-    // Install
+    // Install delegates to CLI
     const installed = await adapter.install(portable, DEFAULT_TARGET);
     expect(installed.tracking).toBe('managed');
+    expect(installed.id.type).toBe('mcp-server');
+    expect(installed.id.tool).toBe('gemini-cli');
 
-    // Verify via scan
-    let components = await adapter.scan();
-    let found = components.find((c) => c.id.name === 'lifecycle-server');
-    expect(found).toBeDefined();
-    expect(found!.id.type).toBe('mcp-server');
-    expect(found!.id.tool).toBe('gemini-cli');
-    const core = found!.core as { transport: string; command: string; args?: string[] };
-    expect(core.transport).toBe('stdio');
-    expect(core.command).toBe('node');
-    expect(core.args).toEqual(['server.js']);
-
-    // Uninstall
+    // Uninstall delegates to CLI
     await adapter.uninstall({
       tool: 'gemini-cli',
       type: 'mcp-server',
@@ -1215,13 +1216,16 @@ describe('GeminiCliAdapter -- full lifecycle', () => {
       scope: 'user',
     });
 
-    // Verify removal
-    components = await adapter.scan();
-    found = components.find((c) => c.id.name === 'lifecycle-server');
-    expect(found).toBeUndefined();
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['mcp', 'remove', '--scope', 'user', 'lifecycle-server'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('skill: install -> uninstall', async () => {
+  it('skill: install via file I/O, uninstall via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'skill',
       name: 'lifecycle-skill',
@@ -1229,12 +1233,15 @@ describe('GeminiCliAdapter -- full lifecycle', () => {
       core: { description: 'Lifecycle test', content: 'Skill content here.' },
     };
 
-    // Install
+    // Install still uses file I/O
     const installed = await adapter.install(portable, DEFAULT_TARGET);
     expect(installed.tracking).toBe('managed');
     expect(installed.id.type).toBe('skill');
 
-    // Uninstall
+    const content = await readFile(join(tempDir, 'skills', 'lifecycle-skill', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Skill content here.');
+
+    // Uninstall delegates to CLI
     await adapter.uninstall({
       tool: 'gemini-cli',
       type: 'skill',
@@ -1242,43 +1249,12 @@ describe('GeminiCliAdapter -- full lifecycle', () => {
       scope: 'user',
     });
 
-    // Verify removal
-    try {
-      await readFile(join(tempDir, 'skills', 'lifecycle-skill', 'SKILL.md'), 'utf-8');
-      expect.fail('File should not exist after uninstall');
-    } catch {
-      // Expected
-    }
-  });
-});
-
-// --- backup safety ---
-
-describe('GeminiCliAdapter -- backup safety', () => {
-  it('install creates backup of settings.json', async () => {
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'backup-test',
-      core: { transport: 'stdio', command: 'echo' },
-    };
-
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const backup = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE + '.backup'), 'utf-8'));
-    expect(Object.keys(backup.mcpServers)).toHaveLength(2);
-    expect(backup.mcpServers['backup-test']).toBeUndefined();
-  });
-
-  it('uninstall creates backup of settings.json', async () => {
-    await adapter.uninstall({
-      tool: 'gemini-cli',
-      type: 'mcp-server',
-      name: 'filesystem',
-      scope: 'user',
-    });
-
-    const backup = JSON.parse(await readFile(join(tempDir, SETTINGS_FILE + '.backup'), 'utf-8'));
-    expect(backup.mcpServers.filesystem).toBeDefined();
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'gemini',
+      ['skills', 'uninstall', '--scope', 'user', 'lifecycle-skill'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 });
 

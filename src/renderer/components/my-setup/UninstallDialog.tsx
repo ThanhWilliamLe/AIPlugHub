@@ -49,8 +49,15 @@ export function UninstallDialog({
             Uninstall {componentName}?
           </h2>
           <p id="uninstall-description" className="text-sm text-sand-secondary mb-6">
-            This will remove the plugin from your tool configuration. This action cannot be
-            undone.
+            {componentId.scope.startsWith('extension:') ? (
+              <>
+                This will uninstall the entire{' '}
+                <strong>{componentId.scope.slice('extension:'.length)}</strong> extension, including
+                all its components (skills, commands, hooks, agents). This action cannot be undone.
+              </>
+            ) : (
+              'This will remove the plugin from your tool configuration. This action cannot be undone.'
+            )}
           </p>
           <div className="flex gap-3 justify-end">
             <Button variant="outline" size="sm" onClick={onCancel}>

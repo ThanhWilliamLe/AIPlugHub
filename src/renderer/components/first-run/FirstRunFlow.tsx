@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useToolStore } from '@renderer/stores/tool-store';
 import { useUiStore } from '@renderer/stores/ui-store';
-import { TOOL_META } from '@shared/constants';
+import { TOOL_META, ENABLED_TOOL_IDS } from '@shared/constants';
 import { Button } from '@renderer/components/ui/button';
 import type { ToolDetectionResult, ToolId } from '@shared/types';
 
@@ -74,7 +74,7 @@ export function FirstRunFlow() {
                   <ToolDetectionRow key={tool.instanceId} tool={tool} />
                 ))
               : /* Show placeholder rows while detecting */
-                (['claude-code', 'claude-desktop', 'gemini-cli', 'antigravity'] as ToolId[]).map(
+                ENABLED_TOOL_IDS.map(
                   (toolId) => (
                     <div
                       key={toolId}

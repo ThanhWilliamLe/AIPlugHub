@@ -111,8 +111,8 @@ export function BrowseTab() {
       if (entry) handleSelectEntry({ sourceId: entry.sourceId, ref: entry.ref });
     },
     onSpace: (index) => {
-      // Only toggle selection in selection mode — prevent silent state changes
-      if (!browseSelectionMode) return;
+      // Auto-enter selection mode on Space if not already in it
+      if (!browseSelectionMode) enterBrowseSelectionMode();
       const entry = filteredEntries[index];
       if (entry) handleToggleSelect({ sourceId: entry.sourceId, ref: entry.ref }, index);
     },

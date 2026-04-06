@@ -48,15 +48,16 @@ describe('SettingsOverlay', () => {
 // ─── ToolDetectionSection ───────────────────────────────────────────
 
 describe('ToolDetectionSection', () => {
-  it('renders all 4 tool names', async () => {
+  it('renders enabled tool names', async () => {
     render(<ToolDetectionSection />);
     // All tools are undetected by default, so they are collapsed
     const expander = screen.getByText(/other supported tool/);
     await userEvent.click(expander);
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
     expect(screen.getByText('Claude Desktop')).toBeInTheDocument();
-    expect(screen.getByText('Gemini CLI')).toBeInTheDocument();
-    expect(screen.getByText('Antigravity')).toBeInTheDocument();
+    // Disabled tools should not appear
+    expect(screen.queryByText('Gemini CLI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Antigravity')).not.toBeInTheDocument();
   });
 
   it('shows "Detected" for detected tools', async () => {
@@ -79,7 +80,7 @@ describe('ToolDetectionSection', () => {
     // Non-detected tools are collapsed; expand them first
     const expander = screen.getByText(/other supported tool/);
     await userEvent.click(expander);
-    expect(screen.getAllByText('Not found').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('Not found').length).toBeGreaterThanOrEqual(1);
   });
 
   it('clicking Rescan calls detect and scanAll', async () => {

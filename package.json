@@ -1,6 +1,6 @@
 {
   "name": "aiplughub",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "description": "AI Plugin Manager — manage plugins across AI CLI tools",
   "main": "./out/main/index.js",
   "scripts": {

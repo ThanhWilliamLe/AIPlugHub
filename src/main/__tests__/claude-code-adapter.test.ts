@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -8,6 +8,18 @@ import { createConfigIO } from '../config-io';
 import { createLogger } from '../logger';
 import type { PortableComponent, InstallTarget, ComponentType } from '@shared/types';
 import { AppError } from '@shared/types';
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFile: vi.fn(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(null, '', '');
+      },
+    ),
+  };
+});
 
 const logger = createLogger();
 const configIO = createConfigIO(logger);
@@ -488,7 +500,8 @@ describe('ClaudeCodeAdapter.scan — full integration', () => {
 // ─── install ────────────────────────────────────────────────────────
 
 describe('ClaudeCodeAdapter.install', () => {
-  it('installs MCP server to .claude.json', async () => {
+  it('installs stdio MCP server via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'new-server',
@@ -500,30 +513,16 @@ describe('ClaudeCodeAdapter.install', () => {
     expect(result.id.name).toBe('new-server');
     expect(result.id.type).toBe('mcp-server');
     expect(result.tracking).toBe('managed');
-
-    // Verify file was updated
-    const data = JSON.parse(await readFile(join(tempDir, '.claude.json'), 'utf-8'));
-    expect(data.mcpServers['new-server']).toEqual({ command: 'npx', args: ['-y', 'new-pkg'] });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'add', '--scope', 'user', '-t', 'stdio', 'new-server', 'npx', '-y', 'new-pkg'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('installs MCP server preserving existing entries', async () => {
-    const portable: PortableComponent = {
-      type: 'mcp-server',
-      name: 'new-server',
-      core: { transport: 'stdio', command: 'echo', args: ['hello'] },
-    };
-
-    await adapter.install(portable, DEFAULT_TARGET);
-
-    const data = JSON.parse(await readFile(join(tempDir, '.claude.json'), 'utf-8'));
-    // Original entries preserved
-    expect(data.mcpServers.filesystem).toBeDefined();
-    expect(data.mcpServers['api-server']).toBeDefined();
-    // New entry added
-    expect(data.mcpServers['new-server']).toBeDefined();
-  });
-
-  it('installs HTTP MCP server', async () => {
+  it('installs HTTP MCP server via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'http-server',
@@ -534,31 +533,51 @@ describe('ClaudeCodeAdapter.install', () => {
       },
     };
 
-    await adapter.install(portable, DEFAULT_TARGET);
+    const result = await adapter.install(portable, DEFAULT_TARGET);
 
-    const data = JSON.parse(await readFile(join(tempDir, '.claude.json'), 'utf-8'));
-    expect(data.mcpServers['http-server']).toEqual({
-      type: 'http',
-      url: 'https://example.com/mcp',
-      headers: { 'X-Key': 'abc' },
-    });
+    expect(result.id.name).toBe('http-server');
+    expect(result.id.type).toBe('mcp-server');
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'add', '--scope', 'user', '-t', 'http', 'http-server', 'https://example.com/mcp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('installs MCP server creating .claude.json if missing', async () => {
-    // Remove existing MCP config
-    const { unlink: unlinkFile } = await import('fs/promises');
-    await unlinkFile(join(tempDir, '.claude.json'));
-
+  it('installs MCP server with env vars via CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
-      name: 'first-server',
-      core: { transport: 'stdio', command: 'echo' },
+      name: 'env-server',
+      core: {
+        transport: 'stdio',
+        command: 'node',
+        args: ['server.js'],
+        env: { HOME: '/home/user' },
+      },
     };
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    const data = JSON.parse(await readFile(join(tempDir, '.claude.json'), 'utf-8'));
-    expect(data.mcpServers['first-server']).toEqual({ command: 'echo' });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      [
+        'mcp',
+        'add',
+        '--scope',
+        'user',
+        '-t',
+        'stdio',
+        '-e',
+        'HOME=/home/user',
+        'env-server',
+        'node',
+        'server.js',
+      ],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
   it('installs skill creating directory and SKILL.md', async () => {
@@ -645,27 +664,93 @@ describe('ClaudeCodeAdapter.install', () => {
     }
   });
 
-  it('rejects names with path separators', async () => {
+  it('accepts namespaced names with forward slash', async () => {
     const portable: PortableComponent = {
-      type: 'command',
+      type: 'mcp-server',
       name: 'foo/bar',
-      core: { content: 'payload' },
+      core: { transport: 'stdio', command: 'echo' },
     };
 
-    try {
-      await adapter.install(portable, DEFAULT_TARGET);
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-    }
+    const result = await adapter.install(portable, DEFAULT_TARGET);
+    expect(result.id.name).toBe('foo/bar');
+  });
+
+  it('installs skill to project path when target has projectPath', async () => {
+    const projectDir = join(tempDir, 'my-project');
+    await mkdir(join(projectDir, '.claude', 'skills'), { recursive: true });
+
+    const portable: PortableComponent = {
+      type: 'skill',
+      name: 'proj-skill',
+      core: { description: 'Project skill', content: 'Do project thing' },
+    };
+    const target: InstallTarget = {
+      instanceId: 'claude-code-default',
+      scope: 'project',
+      projectPath: projectDir,
+    };
+
+    const result = await adapter.install(portable, target);
+    expect(result.id.scope).toBe('project');
+
+    const content = await readFile(
+      join(projectDir, '.claude', 'skills', 'proj-skill', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(content).toContain('name: proj-skill');
+  });
+
+  it('installs command to project path when target has projectPath', async () => {
+    const projectDir = join(tempDir, 'my-project-cmd');
+    await mkdir(join(projectDir, '.claude', 'commands'), { recursive: true });
+
+    const portable: PortableComponent = {
+      type: 'command',
+      name: 'proj-cmd',
+      core: { description: 'Project cmd', content: 'Do cmd' },
+    };
+    const target: InstallTarget = {
+      instanceId: 'claude-code-default',
+      scope: 'project',
+      projectPath: projectDir,
+    };
+
+    const result = await adapter.install(portable, target);
+    expect(result.id.scope).toBe('project');
+
+    const content = await readFile(join(projectDir, '.claude', 'commands', 'proj-cmd.md'), 'utf-8');
+    expect(content).toContain('name: proj-cmd');
+  });
+
+  it('installs agent to project path when target has projectPath', async () => {
+    const projectDir = join(tempDir, 'my-project-agt');
+    await mkdir(join(projectDir, '.claude', 'agents'), { recursive: true });
+
+    const portable: PortableComponent = {
+      type: 'agent',
+      name: 'proj-agent',
+      description: 'Project agent',
+      core: { description: 'Project agent', model: 'sonnet' },
+    };
+    const target: InstallTarget = {
+      instanceId: 'claude-code-default',
+      scope: 'project',
+      projectPath: projectDir,
+    };
+
+    const result = await adapter.install(portable, target);
+    expect(result.id.scope).toBe('project');
+
+    const content = await readFile(join(projectDir, '.claude', 'agents', 'proj-agent.md'), 'utf-8');
+    expect(content).toContain('name: proj-agent');
   });
 });
 
 // ─── uninstall ──────────────────────────────────────────────────────
 
 describe('ClaudeCodeAdapter.uninstall', () => {
-  it('uninstalls MCP server from .claude.json', async () => {
+  it('uninstalls MCP server via CLI', async () => {
+    const cp = await import('child_process');
     await adapter.uninstall({
       tool: 'claude-code',
       type: 'mcp-server',
@@ -673,10 +758,12 @@ describe('ClaudeCodeAdapter.uninstall', () => {
       scope: 'user',
     });
 
-    const data = JSON.parse(await readFile(join(tempDir, '.claude.json'), 'utf-8'));
-    expect(data.mcpServers.filesystem).toBeUndefined();
-    // Other servers still present
-    expect(data.mcpServers['api-server']).toBeDefined();
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'remove', '--scope', 'user', 'filesystem'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
   it('uninstalls skill by deleting directory', async () => {
@@ -786,7 +873,13 @@ describe('ClaudeCodeAdapter.uninstall', () => {
     expect(settings.otherSetting).toBe(true); // other settings preserved
   });
 
-  it('throws COMPONENT_NOT_FOUND for missing MCP server', async () => {
+  it('throws CLI_EXEC_FAILED when MCP server removal fails', async () => {
+    const cp = await import('child_process');
+    (cp.execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(new Error('MCP server "nonexistent" not found'), '', '');
+      },
+    );
     try {
       await adapter.uninstall({
         tool: 'claude-code',
@@ -797,7 +890,7 @@ describe('ClaudeCodeAdapter.uninstall', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
+      expect((err as AppError).code).toBe('CLI_EXEC_FAILED');
     }
   });
 
@@ -835,7 +928,8 @@ describe('ClaudeCodeAdapter.uninstall', () => {
 // ─── Full cycle: install → verify → uninstall → verify ─────────────
 
 describe('ClaudeCodeAdapter — full lifecycle', () => {
-  it('MCP server: install → scan → uninstall → scan', async () => {
+  it('MCP server: install → uninstall delegates to CLI', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'lifecycle-server',
@@ -845,12 +939,12 @@ describe('ClaudeCodeAdapter — full lifecycle', () => {
     // Install
     const installed = await adapter.install(portable, DEFAULT_TARGET);
     expect(installed.tracking).toBe('managed');
-
-    // Verify via scan
-    let components = await adapter.scan();
-    let found = components.find((c) => c.id.name === 'lifecycle-server');
-    expect(found).toBeDefined();
-    expect(found!.id.type).toBe('mcp-server');
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      expect.arrayContaining(['mcp', 'add', 'lifecycle-server']),
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
 
     // Uninstall
     await adapter.uninstall({
@@ -860,10 +954,12 @@ describe('ClaudeCodeAdapter — full lifecycle', () => {
       scope: 'user',
     });
 
-    // Verify removal
-    components = await adapter.scan();
-    found = components.find((c) => c.id.name === 'lifecycle-server');
-    expect(found).toBeUndefined();
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'remove', '--scope', 'user', 'lifecycle-server'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
   it('Skill: install → scan → uninstall → scan', async () => {
@@ -1024,7 +1120,8 @@ describe('ClaudeCodeAdapter — metadata methods', () => {
 // ─── backup safety ──────────────────────────────────────────────────
 
 describe('ClaudeCodeAdapter — backup safety', () => {
-  it('install creates backup of .claude.json', async () => {
+  it('MCP install delegates to CLI (no local file backup needed)', async () => {
+    const cp = await import('child_process');
     const portable: PortableComponent = {
       type: 'mcp-server',
       name: 'backup-test',
@@ -1033,13 +1130,17 @@ describe('ClaudeCodeAdapter — backup safety', () => {
 
     await adapter.install(portable, DEFAULT_TARGET);
 
-    // Backup should contain the original 3 servers (pre-install state)
-    const backup = JSON.parse(await readFile(join(tempDir, '.claude.json.backup'), 'utf-8'));
-    expect(Object.keys(backup.mcpServers)).toHaveLength(3);
-    expect(backup.mcpServers['backup-test']).toBeUndefined();
+    // CLI handles the file operations — verify delegation happened
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      expect.arrayContaining(['mcp', 'add', 'backup-test']),
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('uninstall creates backup of config file', async () => {
+  it('MCP uninstall delegates to CLI (no local file backup needed)', async () => {
+    const cp = await import('child_process');
     await adapter.uninstall({
       tool: 'claude-code',
       type: 'mcp-server',
@@ -1047,9 +1148,12 @@ describe('ClaudeCodeAdapter — backup safety', () => {
       scope: 'user',
     });
 
-    // Backup should contain all 3 original servers
-    const backup = JSON.parse(await readFile(join(tempDir, '.claude.json.backup'), 'utf-8'));
-    expect(backup.mcpServers.filesystem).toBeDefined();
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['mcp', 'remove', '--scope', 'user', 'filesystem'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 });
 
@@ -1444,159 +1548,79 @@ describe('ClaudeCodeAdapter.scan — deduplication', () => {
 // ─── togglePlugin ───────────────────────────────────────────────────
 
 describe('ClaudeCodeAdapter.togglePlugin', () => {
-  it('writes enabledPlugins to settings.json', async () => {
+  it('enables plugin via CLI', async () => {
+    const cp = await import('child_process');
     await adapter.togglePlugin('my-plugin@mp', true);
 
-    const settings = JSON.parse(await readFile(join(rootPath, 'settings.json'), 'utf-8'));
-    expect(settings.enabledPlugins).toEqual({ 'my-plugin@mp': true });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'enable', '--scope', 'user', 'my-plugin@mp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('preserves existing settings when toggling', async () => {
-    // Existing settings have hooks
+  it('disables plugin via CLI', async () => {
+    const cp = await import('child_process');
     await adapter.togglePlugin('my-plugin@mp', false);
 
-    const settings = JSON.parse(await readFile(join(rootPath, 'settings.json'), 'utf-8'));
-    expect(settings.hooks).toBeDefined(); // hooks preserved
-    expect(settings.enabledPlugins).toEqual({ 'my-plugin@mp': false });
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'disable', '--scope', 'user', 'my-plugin@mp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 
-  it('creates settings.json if missing', async () => {
-    const emptyBase = join(tempDir, 'toggle-base');
-    const emptyRoot = join(emptyBase, '.claude');
-    await mkdir(emptyRoot, { recursive: true });
-    const emptyAdapter = createClaudeCodeAdapter(emptyRoot, 'cc-toggle', configIO, logger);
-
-    await emptyAdapter.togglePlugin('test-plugin@mp', true);
-
-    const settings = JSON.parse(await readFile(join(emptyRoot, 'settings.json'), 'utf-8'));
-    expect(settings.enabledPlugins).toEqual({ 'test-plugin@mp': true });
-  });
-
-  it('can toggle multiple plugins', async () => {
+  it('can toggle multiple plugins via CLI', async () => {
+    const cp = await import('child_process');
     await adapter.togglePlugin('plugin-a@mp', true);
     await adapter.togglePlugin('plugin-b@mp', false);
 
-    const settings = JSON.parse(await readFile(join(rootPath, 'settings.json'), 'utf-8'));
-    expect(settings.enabledPlugins['plugin-a@mp']).toBe(true);
-    expect(settings.enabledPlugins['plugin-b@mp']).toBe(false);
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'enable', '--scope', 'user', 'plugin-a@mp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'disable', '--scope', 'user', 'plugin-b@mp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
+    );
   });
 });
 
 // ─── uninstallPlugin ────────────────────────────────────────────────
 
 describe('ClaudeCodeAdapter.uninstallPlugin', () => {
-  async function createUninstallFixture(root: string): Promise<string> {
-    const pluginsDir = join(root, 'plugins');
-    await mkdir(pluginsDir, { recursive: true });
-
-    const installDir = join(pluginsDir, 'cache', 'test-plugin@mp');
-    await mkdir(installDir, { recursive: true });
-    await writeFile(join(installDir, 'README.md'), 'plugin content');
-
-    await writeFile(
-      join(pluginsDir, 'installed_plugins.json'),
-      JSON.stringify({
-        plugins: {
-          'test-plugin@mp': [
-            {
-              scope: 'user',
-              installPath: installDir,
-              version: '1.0.0',
-              installedAt: '2026-01-01T00:00:00Z',
-              lastUpdated: '2026-01-01T00:00:00Z',
-            },
-          ],
-        },
-      }),
-    );
-
-    return installDir;
-  }
-
-  it('removes from registry and deletes cache', async () => {
-    const installDir = await createUninstallFixture(rootPath);
-
+  it('uninstalls plugin via CLI', async () => {
+    const cp = await import('child_process');
     await adapter.uninstallPlugin('test-plugin@mp');
 
-    // Registry should no longer contain the plugin
-    const data = JSON.parse(
-      await readFile(join(rootPath, 'plugins', 'installed_plugins.json'), 'utf-8'),
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'uninstall', '--scope', 'user', 'test-plugin@mp'],
+      expect.objectContaining({ shell: true }),
+      expect.any(Function),
     );
-    expect(data.plugins['test-plugin@mp']).toBeUndefined();
-
-    // Install directory should be deleted
-    const { stat: fsStat } = await import('fs/promises');
-    try {
-      await fsStat(installDir);
-      expect.fail('Install directory should be deleted');
-    } catch (err) {
-      expect((err as NodeJS.ErrnoException).code).toBe('ENOENT');
-    }
   });
 
-  it('removes from enabledPlugins in settings.json', async () => {
-    await createUninstallFixture(rootPath);
-
-    // Enable the plugin first
-    await adapter.togglePlugin('test-plugin@mp', true);
-
-    // Then uninstall it
-    await adapter.uninstallPlugin('test-plugin@mp');
-
-    const settings = JSON.parse(await readFile(join(rootPath, 'settings.json'), 'utf-8'));
-    expect(settings.enabledPlugins?.['test-plugin@mp']).toBeUndefined();
-  });
-
-  it('throws COMPONENT_NOT_FOUND for missing plugin', async () => {
-    await createUninstallFixture(rootPath);
+  it('throws CLI_EXEC_FAILED when uninstall fails', async () => {
+    const cp = await import('child_process');
+    (cp.execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+        cb(new Error('Plugin "nonexistent@mp" not found'), '', '');
+      },
+    );
 
     try {
       await adapter.uninstallPlugin('nonexistent@mp');
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
-    }
-  });
-
-  it('throws COMPONENT_NOT_FOUND when registry file missing', async () => {
-    try {
-      await adapter.uninstallPlugin('anything@mp');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('COMPONENT_NOT_FOUND');
-    }
-  });
-
-  it('rejects path traversal in installPath', async () => {
-    const pluginsDir = join(rootPath, 'plugins');
-    await mkdir(pluginsDir, { recursive: true });
-
-    await writeFile(
-      join(pluginsDir, 'installed_plugins.json'),
-      JSON.stringify({
-        plugins: {
-          'evil@mp': [
-            {
-              scope: 'user',
-              installPath: join(rootPath, '..', '..', 'etc', 'evil'),
-              version: '1.0.0',
-              installedAt: '2026-01-01T00:00:00Z',
-              lastUpdated: '2026-01-01T00:00:00Z',
-            },
-          ],
-        },
-      }),
-    );
-
-    try {
-      await adapter.uninstallPlugin('evil@mp');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AppError);
-      expect((err as AppError).code).toBe('CONFIG_PERMISSION');
-      expect((err as AppError).message).toContain('escapes');
+      expect((err as AppError).code).toBe('CLI_EXEC_FAILED');
     }
   });
 });
@@ -1802,17 +1826,17 @@ describe('ClaudeCodeAdapter — LSP server support', () => {
     );
   });
 
-  it('installPlugin writes .lsp-servers.json for LSP components', async () => {
+  it('installPlugin writes .lsp-servers.json for LSP components (non-marketplace fallback)', async () => {
     const plugin = {
-      pluginKey: 'rust-lsp@test-market',
+      pluginKey: 'rust-lsp-local',
       pluginName: 'rust-lsp',
-      marketplace: 'test-market',
+      marketplace: '',
       version: '1.0.0',
       enabled: true,
       components: [
         {
           type: 'lsp-server' as const,
-          name: 'rust-lsp@test-market/rust-analyzer',
+          name: 'rust-lsp-local/rust-analyzer',
           core: {
             command: 'rust-analyzer',
             extensionToLanguage: { '.rs': 'rust' },
@@ -1824,7 +1848,7 @@ describe('ClaudeCodeAdapter — LSP server support', () => {
     const installed = await adapter.installPlugin(plugin);
     expect(installed).toHaveLength(1);
     expect(installed[0].id.type).toBe('lsp-server');
-    expect(installed[0].id.name).toBe('rust-lsp@test-market/rust-analyzer');
+    expect(installed[0].id.name).toBe('rust-lsp-local/rust-analyzer');
     expect(installed[0].configPath).toContain('.lsp-servers.json');
 
     // Verify .lsp-servers.json was written
@@ -1926,23 +1950,40 @@ describe('ClaudeCodeAdapter — LSP server support', () => {
     expect(lsp).toBeDefined();
 
     // 3. Simulate export: build a PortablePlugin from the scan result
+    //    Use empty marketplace to test the direct-write fallback path
     const portablePlugin = {
-      pluginKey: 'roundtrip-lsp@test-market',
+      pluginKey: 'roundtrip-lsp-local',
       pluginName: 'roundtrip-lsp',
-      marketplace: 'test-market',
+      marketplace: '',
       version: '1.0.0',
       enabled: true,
       components: [
         {
           type: 'lsp-server' as const,
-          name: 'roundtrip-lsp@test-market/analyzer',
+          name: 'roundtrip-lsp-local/analyzer',
           core: lsp!.core,
         },
       ],
     };
 
-    // 4. Uninstall the plugin
+    // 4. Uninstall the plugin (delegates to CLI)
     await adapter.uninstallPlugin('roundtrip-lsp@test-market');
+
+    // Simulate the CLI's file cleanup (the mock doesn't actually delete files)
+    await rm(join(rootPath, 'plugins', 'roundtrip-lsp@test-market'), {
+      recursive: true,
+      force: true,
+    });
+    const regPath = join(rootPath, 'plugins', 'installed_plugins.json');
+    const regData = JSON.parse(await readFile(regPath, 'utf-8'));
+    delete regData.plugins['roundtrip-lsp@test-market'];
+    await writeFile(regPath, JSON.stringify(regData));
+    // Also remove enabledPlugins entry from settings.json
+    const settingsContent = JSON.parse(await readFile(join(rootPath, 'settings.json'), 'utf-8'));
+    if (settingsContent.enabledPlugins) {
+      delete settingsContent.enabledPlugins['roundtrip-lsp@test-market'];
+    }
+    await writeFile(join(rootPath, 'settings.json'), JSON.stringify(settingsContent));
 
     // 5. Verify it's gone
     components = await adapter.scan();
@@ -1954,11 +1995,147 @@ describe('ClaudeCodeAdapter — LSP server support', () => {
     expect(installed).toHaveLength(1);
     expect(installed[0].id.type).toBe('lsp-server');
 
-    // 7. Scan again — should be back
+    // 7. Scan again — should be back (under the local key now)
     components = await adapter.scan();
-    lsp = components.find((c) => c.id.name.includes('roundtrip-lsp@test-market/analyzer'));
+    lsp = components.find((c) => c.id.name.includes('roundtrip-lsp-local/analyzer'));
     expect(lsp).toBeDefined();
     expect((lsp!.core as { command: string }).command).toBe('my-analyzer');
     expect((lsp!.core as { args: string[] }).args).toEqual(['--stdio']);
+  });
+
+  it('installPlugin uses CLI for marketplace plugins', async () => {
+    const cp = await import('child_process');
+
+    // Inline fixture: create installed_plugins.json + plugin dir so scanPlugins() finds them
+    const pluginsDir = join(rootPath, 'plugins');
+    await mkdir(pluginsDir, { recursive: true });
+    const installDir = join(pluginsDir, 'cache', 'agent-teams@claude-code-workflows');
+    await mkdir(join(installDir, 'skills', 'auto-deploy'), { recursive: true });
+    await writeFile(
+      join(installDir, 'skills', 'auto-deploy', 'SKILL.md'),
+      '---\nname: auto-deploy\ndescription: Auto deploy skill\n---\nDeploy automatically',
+    );
+    await writeFile(
+      join(pluginsDir, 'installed_plugins.json'),
+      JSON.stringify({
+        version: 1,
+        plugins: {
+          'agent-teams@claude-code-workflows': [
+            {
+              scope: 'user',
+              installPath: installDir,
+              version: '1.2.0',
+              installedAt: '2026-01-01T00:00:00Z',
+              lastUpdated: '2026-01-02T00:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
+
+    const plugin = {
+      pluginKey: 'agent-teams@claude-code-workflows',
+      pluginName: 'agent-teams',
+      marketplace: 'claude-code-workflows',
+      version: '1.2.0',
+      enabled: true,
+      components: [],
+    };
+
+    const target = { instanceId: 'claude-code-default', scope: 'user' };
+    const installed = await adapter.installPlugin(plugin, target);
+
+    // Should have called CLI instead of writing files directly
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'install', '--scope', 'user', 'agent-teams@claude-code-workflows'],
+      expect.any(Object),
+      expect.any(Function),
+    );
+
+    // Should return components found by re-scan
+    expect(installed.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('installPlugin falls back to direct writes for non-marketplace plugins', async () => {
+    const cp = await import('child_process');
+    (cp.execFile as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    const plugin = {
+      pluginKey: 'local-plugin',
+      pluginName: 'local-plugin',
+      marketplace: '',
+      version: '1.0.0',
+      enabled: true,
+      components: [
+        {
+          type: 'skill' as const,
+          name: 'local-plugin/my-skill',
+          core: { description: 'A local skill', content: 'Do something' },
+        },
+      ],
+    };
+
+    const installed = await adapter.installPlugin(plugin);
+    expect(installed).toHaveLength(1);
+    expect(installed[0].id.type).toBe('skill');
+
+    // Should NOT have called `claude plugins install` — no marketplace
+    const calls = (cp.execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const pluginInstallCall = calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && c[1].includes('plugins') && c[1].includes('install'),
+    );
+    expect(pluginInstallCall).toBeUndefined();
+  });
+
+  it('installPlugin passes --scope to CLI', async () => {
+    const cp = await import('child_process');
+    (cp.execFile as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    // Inline fixture for scanPlugins() re-scan
+    const pluginsDir2 = join(rootPath, 'plugins');
+    await mkdir(pluginsDir2, { recursive: true });
+    const installDir2 = join(pluginsDir2, 'cache', 'agent-teams@claude-code-workflows');
+    await mkdir(join(installDir2, 'skills', 'auto-deploy'), { recursive: true });
+    await writeFile(
+      join(installDir2, 'skills', 'auto-deploy', 'SKILL.md'),
+      '---\nname: auto-deploy\ndescription: Auto deploy skill\n---\nDeploy automatically',
+    );
+    await writeFile(
+      join(pluginsDir2, 'installed_plugins.json'),
+      JSON.stringify({
+        version: 1,
+        plugins: {
+          'agent-teams@claude-code-workflows': [
+            {
+              scope: 'user',
+              installPath: installDir2,
+              version: '1.2.0',
+              installedAt: '2026-01-01T00:00:00Z',
+              lastUpdated: '2026-01-02T00:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
+
+    const plugin = {
+      pluginKey: 'agent-teams@claude-code-workflows',
+      pluginName: 'agent-teams',
+      marketplace: 'claude-code-workflows',
+      version: '1.2.0',
+      enabled: true,
+      components: [],
+    };
+
+    const target = { instanceId: 'claude-code-default', scope: 'project' };
+    await adapter.installPlugin(plugin, target);
+
+    expect(cp.execFile).toHaveBeenCalledWith(
+      'claude',
+      ['plugins', 'install', '--scope', 'project', 'agent-teams@claude-code-workflows'],
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 });
